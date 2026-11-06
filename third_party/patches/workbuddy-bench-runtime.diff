@@ -700,7 +700,7 @@ index 6c0f040..fe56cab 100644
      "cbc-agent": HarnessRuntimeAdapter(
          harness_name="cbc-agent",
          canonical_display_name="CodeBuddy Code CLI",
-@@ -80,6 +107,24 @@ HARNESS_ADAPTERS: dict[str, HarnessRuntimeAdapter] = {
+@@ -80,6 +107,33 @@ HARNESS_ADAPTERS: dict[str, HarnessRuntimeAdapter] = {
          proxy_url_env="CBC_PROXY_URL",
          uses_anthropic_env=False,
      ),
@@ -719,6 +719,16 @@ index 6c0f040..fe56cab 100644
 +        harness_protocol="openai",
 +        backend_base_env="CODEX_BRIDGE_URL",
 +        backend_key_env="VERTEX_PROXY_KEY",
++        proxy_url_env="",
++        uses_anthropic_env=False,
++    ),
++    # Pi Coding Agent CLI + harness workspace (pi_harness_agent, PiSubstrate).
++    "pi-harness": HarnessRuntimeAdapter(
++        harness_name="pi-harness",
++        canonical_display_name="Pi Coding Agent (harness-adaptive)",
++        harness_protocol="openai",
++        backend_base_env="PI_BASE_URL",
++        backend_key_env="PI_API_KEY",
 +        proxy_url_env="",
 +        uses_anthropic_env=False,
 +    ),

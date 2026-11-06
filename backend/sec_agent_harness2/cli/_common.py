@@ -30,7 +30,7 @@ from ..core.spec import BenchmarkAdapter
 
 BENCHES = ("jb", "wb", "lab")
 WB_SUBSETS = ("office", "web", "code")
-SUBSTRATES = ("oc", "cx", "claude")
+SUBSTRATES = ("oc", "cx", "claude", "pi")
 
 # Human-friendly aliases: the canonical short tokens stay on disk (namespaces,
 # library variants, run IDs), but users may type the full names anywhere a
@@ -56,6 +56,9 @@ SUBSTRATE_ALIASES = {
     "claude": "claude",
     "cl": "claude",
     "clawgod": "claude",
+    "pi": "pi",
+    "pi-mono": "pi",
+    "pi-coding-agent": "pi",
 }
 BENCH_CHOICES = tuple(sorted(set(BENCHES) | set(BENCH_ALIASES)))
 SUBSTRATE_CHOICES = tuple(sorted(set(SUBSTRATES) | set(SUBSTRATE_ALIASES)))

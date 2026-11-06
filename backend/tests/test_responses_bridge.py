@@ -359,6 +359,7 @@ def test_ensure_bridge_running_concurrency_and_daemon(monkeypatch, tmp_path):
     """Verify ensure_bridge_running starts exactly one daemon process and reuses it under concurrent load."""
     import concurrent.futures
     from unittest.mock import MagicMock
+
     from sec_agent_harness2.cli import responses_bridge
 
     fake_dep = tmp_path / "dependencies" / "codex"

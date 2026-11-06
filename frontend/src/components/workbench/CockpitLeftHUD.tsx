@@ -115,9 +115,11 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
     if (executorStatus.active_executor) {
       setSweepSubstrate(executorStatus.active_executor);
     }
-    const claudeExec = executorStatus.executors.find((e) => e.id === 'claude');
-    if (claudeExec?.effort && ['low', 'medium', 'high'].includes(claudeExec.effort)) {
-      setSweepClaudeEffort(claudeExec.effort as 'low' | 'medium' | 'high');
+    const activeExec = executorStatus.executors.find(
+      (e) => e.id === (executorStatus.active_executor === 'pi' ? 'pi' : 'claude')
+    );
+    if (activeExec?.effort && ['low', 'medium', 'high'].includes(activeExec.effort)) {
+      setSweepClaudeEffort(activeExec.effort as 'low' | 'medium' | 'high');
     }
   }, [executorStatus]);
 
@@ -129,9 +131,15 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
           ? 'sequential'
           : 'parallel';
       const substrate = launcherType === 'demo' ? 'mock_demo' : sweepSubstrate;
+      const subLabel =
+        substrate === 'claude'
+          ? `Claude (${sweepClaudeEffort})`
+          : substrate === 'pi'
+          ? `Pi (${sweepClaudeEffort})`
+          : substrate;
       onParameterChange({
         mode,
-        substrate: substrate === 'claude' ? `Claude (${sweepClaudeEffort})` : substrate,
+        substrate: subLabel,
         bench: launcherType === 'sweep' ? sweepBench : 'demo',
       });
     }
@@ -227,7 +235,7 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
           max_tasks: parsedMax && parsedMax > 0 ? parsedMax : null,
           only_domains: sweepOnlyDomains.trim() || null,
           dry_run: sweepDryRun,
-          effort: sweepSubstrate === 'claude' ? sweepClaudeEffort : undefined,
+          effort: (sweepSubstrate === 'claude' || sweepSubstrate === 'pi') ? sweepClaudeEffort : undefined,
         });
         showToast(tx('基准评测演进任务已启动', 'Benchmark Sweep pipeline launched'), 'info');
       }
@@ -766,13 +774,16 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
                     <option value="claude">Claude Code (Thinking 思考执行器)</option>
                     <option value="oc">OpenCode (oc 本地执行器)</option>
                     <option value="cx">Codex (cx 镜像执行器)</option>
+                    <option value="pi">Pi Coding Agent (pi 极简原生执行器)</option>
                   </select>
                 </div>
 
-                {launcherType === 'sweep' && sweepSubstrate === 'claude' && (
+                {launcherType === 'sweep' && (sweepSubstrate === 'claude' || sweepSubstrate === 'pi') && (
                   <div>
                     <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1">
-                      {tx('Claude 深度思考等级 (Effort)', 'Claude Thinking Effort')}
+                      {sweepSubstrate === 'pi'
+                        ? tx('Pi 深度思考等级 (Thinking)', 'Pi Thinking Effort')
+                        : tx('Claude 深度思考等级 (Effort)', 'Claude Thinking Effort')}
                     </label>
                     <div className="grid grid-cols-3 gap-1.5">
                       {(['low', 'medium', 'high'] as const).map((eff) => (
@@ -782,7 +793,9 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
                           onClick={() => setSweepClaudeEffort(eff)}
                           className={`py-1 px-2 rounded-md text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer ${
                             sweepClaudeEffort === eff
-                              ? 'bg-orange-500 text-white'
+                              ? sweepSubstrate === 'pi'
+                                ? 'bg-pink-600 text-white'
+                                : 'bg-orange-500 text-white'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'
                           }`}
                         >

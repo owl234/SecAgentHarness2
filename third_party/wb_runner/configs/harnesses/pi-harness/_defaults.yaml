@@ -1,0 +1,36 @@
+# Shared defaults for the pi-harness family (Pi Coding Agent CLI + harness workspace).
+harness:
+  name: pi-harness
+  import_path: "workbuddy_bench.agents.pi_harness_agent:PiHarnessAgent"
+  protocol: openai
+
+  params:
+    PI_MODEL: "gpt-5.4"
+    PI_EFFORT: "high"
+    WB_HARNESS_WS: ""
+
+environment:
+  cpus: 2
+  memory_mb: 4096
+  storage_mb: 10240
+  allow_internet: true
+
+verifier:
+  disable: false
+
+orchestrator:
+  type: local
+  n_concurrent_trials: 2
+  quiet: false
+  retry:
+    max_retries: 2
+    include_exceptions:
+      - AgentTimeoutError
+      - VerifierTimeoutError
+    exclude_exceptions: null
+    wait_multiplier: 2.0
+    min_wait_sec: 5.0
+    max_wait_sec: 60.0
+
+n_attempts: 1
+timeout_multiplier: 1.0

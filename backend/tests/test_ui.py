@@ -388,8 +388,8 @@ class UITests(unittest.TestCase):
         self.assertEqual(data["models"], ["model-a", "model-b"])
 
     def test_unified_config_synchronizes_all_substrates(self):
-        import tempfile
         import os
+        import tempfile
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_root = Path(tmp_dir)
             (tmp_root / ".env").write_text(
@@ -419,6 +419,7 @@ class UITests(unittest.TestCase):
                 self.assertIn("SEC_AGENT_HARNESS2_SOLVER_MODEL=sec_agent_harness2/gpt-5.4", env_text)
                 self.assertIn("SEC_AGENT_HARNESS2_CODEX_MODEL=gpt-5.4", env_text)
                 self.assertIn("SEC_AGENT_HARNESS2_CLAUDE_MODEL=gpt-5.4", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_PI_MODEL=gpt-5.4", env_text)
                 self.assertIn("SEC_AGENT_HARNESS2_IMPROVER_MODEL=sec_agent_harness2/gpt-5.4", env_text)
                 self.assertIn("SEC_AGENT_HARNESS2_JUDGE_MODEL=gpt-5.4", env_text)
             finally:
@@ -441,8 +442,8 @@ class UITests(unittest.TestCase):
 
 
     def test_unified_config_model_prefix_stripping(self):
-        import tempfile
         import os
+        import tempfile
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_root = Path(tmp_dir)
             saved_env = dict(os.environ)
@@ -473,8 +474,8 @@ class UITests(unittest.TestCase):
                 scanner.sync_config_from_env()
 
     def test_unified_config_judge_override_and_clearing(self):
-        import tempfile
         import os
+        import tempfile
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_root = Path(tmp_dir)
             (tmp_root / ".env").write_text(

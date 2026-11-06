@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import api, install
+from .. import api
 from . import scanner
 from .runner import ExecutionManager
 
@@ -107,7 +107,7 @@ class DemoLaunchRequest(BaseModel):
 class SweepLaunchRequest(BaseModel):
     bench: str = Field(default="jb", description="jb | wb | lab 基准")
     subset: str | None = Field(default=None, description="office | web | code (仅 wb 必填)")
-    substrate: str = Field(default="oc", description="oc | cx | claude 执行基座")
+    substrate: str = Field(default="oc", description="oc | cx | claude | pi 执行基座")
     k: int = Field(default=1, ge=1)
     modes: str = Field(default="parallel,sequential")
     split: str = Field(default="all")
@@ -127,7 +127,7 @@ class JudgeLaunchRequest(BaseModel):
     run_id: str | None = Field(default=None, description="Optional run_id to infer bench/substrate/k")
     bench: str | None = Field(default=None, description="jb | wb | lab 基准")
     subset: str | None = Field(default=None, description="office | web | code (仅 wb 必填)")
-    substrate: str | None = Field(default=None, description="oc | cx | claude 执行基座")
+    substrate: str | None = Field(default=None, description="oc | cx | claude | pi 执行基座")
     k: int | None = Field(default=None, ge=1)
     modes: str = Field(default="parallel,sequential")
     seed: int | None = Field(default=None)
@@ -251,10 +251,15 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
                 extra_env["SEC_AGENT_HARNESS2_SOLVER_MODEL"] = eff_model
             elif substrate_val == "cx":
                 extra_env["SEC_AGENT_HARNESS2_CODEX_MODEL"] = eff_model
+            elif substrate_val == "pi":
+                extra_env["SEC_AGENT_HARNESS2_PI_MODEL"] = eff_model
         if req.effort:
-            extra_env["SEC_AGENT_HARNESS2_CLAUDE_EFFORT"] = req.effort
-        if substrate_val == "claude":
-            extra_env["SEC_AGENT_HARNESS2_DEFAULT_EXECUTOR"] = "claude"
+            if substrate_val == "pi":
+                extra_env["SEC_AGENT_HARNESS2_PI_EFFORT"] = req.effort
+            else:
+                extra_env["SEC_AGENT_HARNESS2_CLAUDE_EFFORT"] = req.effort
+        if substrate_val in ("claude", "pi"):
+            extra_env["SEC_AGENT_HARNESS2_DEFAULT_EXECUTOR"] = substrate_val
 
         job = await runner.start_job("sweep", args, extra_env=extra_env)
         return {"status": "started", "job": job}
@@ -397,6 +402,7 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
                 updates["SEC_AGENT_HARNESS2_SOLVER_MODEL"] = oc_model
                 updates["SEC_AGENT_HARNESS2_CODEX_MODEL"] = bare_model
                 updates["SEC_AGENT_HARNESS2_CLAUDE_MODEL"] = bare_model
+                updates["SEC_AGENT_HARNESS2_PI_MODEL"] = bare_model
                 updates["SEC_AGENT_HARNESS2_IMPROVER_MODEL"] = oc_model
                 if req.judge_model is not None and req.judge_model.strip():
                     j_clean = req.judge_model.strip()
@@ -423,8 +429,10 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
                 proto = req.protocol.strip()
                 updates["SEC_AGENT_HARNESS2_API_PROTOCOL"] = proto
                 updates["SEC_AGENT_HARNESS2_CLAUDE_PROTOCOL"] = proto
+                updates["SEC_AGENT_HARNESS2_PI_PROTOCOL"] = proto
             if req.effort is not None:
                 updates["SEC_AGENT_HARNESS2_CLAUDE_EFFORT"] = req.effort.strip()
+                updates["SEC_AGENT_HARNESS2_PI_EFFORT"] = req.effort.strip()
         elif req.executor_id == "claude":
             if eff_base is not None:
                 updates["SEC_AGENT_HARNESS2_CLAUDE_BASE_URL"] = eff_base
@@ -458,6 +466,19 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
                 updates["SEC_AGENT_HARNESS2_CODEX_API_KEY"] = req.api_key
             if req.model is not None:
                 updates["SEC_AGENT_HARNESS2_CODEX_MODEL"] = req.model
+        elif req.executor_id == "pi":
+            if eff_base is not None:
+                updates["SEC_AGENT_HARNESS2_PI_BASE_URL"] = eff_base
+            if req.api_key:
+                updates["SEC_AGENT_HARNESS2_PI_API_KEY"] = req.api_key
+            if req.model is not None:
+                updates["SEC_AGENT_HARNESS2_PI_MODEL"] = req.model
+            if req.protocol is not None:
+                updates["SEC_AGENT_HARNESS2_PI_PROTOCOL"] = req.protocol
+            if req.effort is not None:
+                updates["SEC_AGENT_HARNESS2_PI_EFFORT"] = req.effort
+            if req.cli_path is not None:
+                updates["SEC_AGENT_HARNESS2_PI_BIN"] = req.cli_path
         elif req.executor_id == "vertex":
             if req.improver_model is not None:
                 updates["SEC_AGENT_HARNESS2_IMPROVER_MODEL"] = req.improver_model

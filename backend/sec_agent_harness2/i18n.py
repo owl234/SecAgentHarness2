@@ -53,8 +53,8 @@ _STR: dict[str, tuple[str, str]] = {
         "仅 WB：office | web | code（办公 / 网页 / 代码）",
     ),
     "cell.substrate": (
-        "task-executor substrate: oc (=opencode) | cx (=codex) | claude (=claude/clawgod)",
-        "任务执行基座：oc（=opencode）| cx（=codex）| claude（=claude/clawgod）：缩写与全名通用",
+        "task-executor substrate: oc (=opencode) | cx (=codex) | claude (=claude/clawgod) | pi (=pi coding agent)",
+        "任务执行基座：oc（=opencode）| cx（=codex）| claude（=claude/clawgod）| pi（=pi coding agent）：缩写与全名通用",
     ),
     "cell.modes": (
         "parallel | sequential (agg / seq accepted: the on-disk tokens); "

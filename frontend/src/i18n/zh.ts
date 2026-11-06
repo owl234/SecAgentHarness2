@@ -15,7 +15,7 @@ export const zh = {
   'nav.library': '经验知识库',
   'nav.benchmark': '评测对比大盘',
   'nav.executor': '统一 API 与执行器',
-  'nav.executor_title': '配置统一 API 及 Claude / OpenCode / Codex 执行基座',
+  'nav.executor_title': '配置统一 API 及 Claude / OpenCode / Codex / Pi 执行基座',
   'nav.running': '任务运行中',
   'nav.ready': '服务就绪',
   'nav.offline': '连接中断',

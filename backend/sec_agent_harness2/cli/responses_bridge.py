@@ -45,7 +45,6 @@ from sec_agent_harness2.responses_bridge import (
     to_chat,
 )
 
-
 DEFAULT_BRIDGE_HOST = "0.0.0.0"
 DEFAULT_BRIDGE_PORT = 8765
 

@@ -78,7 +78,7 @@ def infer_run_cell(runs_root: Path, run_id: str) -> dict[str, Any]:
 
     # Match <bench>[-<subset>]-<substrate>-(agg|seq)<k>[-s<seed>]
     m = re.match(
-        r"^(?P<bprefix>jb|lab|wb(?:-(?:office|web|code))?|demo)-(?P<sub>oc|cx|claude)-(?P<mode>agg|seq)(?P<k>\d+)(?:-s(?P<seed>\d+))?",
+        r"^(?P<bprefix>jb|lab|wb(?:-(?:office|web|code))?|demo)-(?P<sub>oc|cx|claude|pi)-(?P<mode>agg|seq)(?P<k>\d+)(?:-s(?P<seed>\d+))?",
         base_id,
     )
     if m:
@@ -862,11 +862,11 @@ def _map_rel_path_to_category(path_str: str) -> str:
         return "c4"
     if norm.startswith("sub_agents"):
         return "c5"
-    if norm.startswith(("skills", ".agents/skills", ".claude/skills")):
+    if norm.startswith(("skills", ".agents/skills", ".claude/skills", ".pi/skills")):
         return "c6"
     if norm.startswith("scripts"):
         return "c7"
-    if norm.startswith("plugin") or norm in (".codex/hooks.json", ".claude/settings.json"):
+    if norm.startswith(("plugin", ".pi/extensions")) or norm in (".codex/hooks.json", ".claude/settings.json", ".pi/hooks.json"):
         return "c8"
     if norm.startswith("mcp") or norm == ".mcp.json":
         return "c9"
@@ -1065,11 +1065,11 @@ def get_harness_diff(
             return "tools"
         if path_str.startswith("scripts"):
             return "scripts"
-        if path_str.startswith(("skills", ".agents/skills", ".claude/skills")):
+        if path_str.startswith(("skills", ".agents/skills", ".claude/skills", ".pi/skills")):
             return "skills"
         if path_str.startswith("sub_agents"):
             return "subagents"
-        if path_str.startswith("plugin") or path_str in (".codex/hooks.json", ".claude/settings.json"):
+        if path_str.startswith(("plugin", ".pi/extensions")) or path_str in (".codex/hooks.json", ".claude/settings.json", ".pi/hooks.json"):
             return "plugins"
         if path_str.startswith("mcp") or path_str == ".mcp.json":
             return "mcp"
@@ -1196,17 +1196,24 @@ def get_preflight_status(workspace_root: Path) -> dict[str, Any]:
             docker_msg = "Docker 检查超时或失败"
 
     project = config.VERTEX_PROJECT
-    solver_model = config.SOLVER_MODEL_OC or config.SOLVER_MODEL_CLAUDE or config.SOLVER_MODEL_CX
+    solver_model = (
+        config.SOLVER_MODEL_OC
+        or config.SOLVER_MODEL_CLAUDE
+        or config.SOLVER_MODEL_CX
+        or config.SOLVER_MODEL_PI
+    )
     judge_model = config.JUDGE_MODEL
     ep_claude = api.claude()
     ep_oc = api.opencode()
     ep_cx = api.codex()
+    ep_pi = api.pi()
     has_unified = bool(config.API_BASE_URL and config.API_KEY)
     has_any_endpoint = bool(
         has_unified
         or (ep_claude and ep_claude.api_key)
         or (ep_oc and ep_oc.api_key)
         or (ep_cx and ep_cx.api_key)
+        or (ep_pi and ep_pi.api_key)
         or os.environ.get("ANTHROPIC_API_KEY")
         or os.environ.get("ANTHROPIC_AUTH_TOKEN")
         or os.environ.get("OPENAI_API_KEY")
@@ -1898,7 +1905,7 @@ def persist_env_updates(
     write_dotenv: bool = True,
 ) -> dict[str, Any]:
     """Update `os.environ`, persist changes to `.env` (preserving comments), and sync derived files."""
-    from .. import api, config, install
+    from .. import api, install
 
     applied: dict[str, str] = {}
     for key, val in updates.items():
@@ -2029,6 +2036,21 @@ def persist_env_updates(
         except Exception:
             pass
 
+    # 3. Pi models.json when Pi endpoint is present
+    pi_agent_dir = workspace_root / "dependencies" / "pi" / "agent"
+    ep_pi = api.pi()
+    if ep_pi is not None and (pi_agent_dir.is_dir() or (workspace_root / "dependencies").is_dir()):
+        try:
+            install.configure_pi(dry_run=False, agent_dir=pi_agent_dir)
+            mf = pi_agent_dir / "models.json"
+            if mf.is_file():
+                try:
+                    synced_files.append(str(mf.relative_to(workspace_root)))
+                except ValueError:
+                    synced_files.append("dependencies/pi/agent/models.json")
+        except Exception:
+            pass
+
     return {"applied_keys": list(applied.keys()), "synced_files": synced_files}
 
 
@@ -2109,6 +2131,10 @@ def probe_executor_endpoint(
         ep = api.codex()
         default_proto = "openai-responses"
         default_model = config.SOLVER_MODEL_CX
+    elif target == "pi":
+        ep = api.pi()
+        default_proto = "openai-chat"
+        default_model = config.SOLVER_MODEL_PI
     elif target == "vertex":
         default_proto = "openai-chat"
         default_model = config.JUDGE_MODEL or "gemini-2.5-pro"
@@ -2140,6 +2166,11 @@ def probe_executor_endpoint(
             os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_API_KEY")
             or os.environ.get("ANTHROPIC_AUTH_TOKEN")
             or os.environ.get("ANTHROPIC_API_KEY", "")
+        ).strip()
+    elif not eff_key and target == "pi":
+        eff_key = (
+            os.environ.get("SEC_AGENT_HARNESS2_PI_API_KEY")
+            or os.environ.get("OPENAI_API_KEY", "")
         ).strip()
     eff_proto = (protocol if protocol else (ep.protocol if ep else default_proto)).strip() or default_proto
     eff_model = (model if model else (ep.model if ep else default_model)).strip() or default_model
@@ -2437,6 +2468,13 @@ def fetch_endpoint_models(
     }
 
 
+def _safe_rel(p: Path, base: Path) -> str:
+    try:
+        return str(p.relative_to(base))
+    except ValueError:
+        return str(p)
+
+
 def get_executors_status(
     workspace_root: Path, managed_bridge: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -2485,7 +2523,7 @@ def get_executors_status(
     elif not claude_cli_ok:
         claude_status = "missing_deps"
         claude_msg = (
-            f"未检测到项目级 clawgod 运行时 ({config.CLAUDE_BIN.relative_to(workspace_root)})；"
+            f"未检测到项目级 clawgod 运行时 ({_safe_rel(config.CLAUDE_BIN, workspace_root)})；"
             "请运行 harness2 setup <bench> --substrate claude 安装"
         )
     else:
@@ -2544,7 +2582,7 @@ def get_executors_status(
     elif not cx_cli_ok:
         cx_status = "missing_deps"
         cx_msg = (
-            f"未安装 Codex 分发包 ({codex_bin_path.relative_to(workspace_root)})；"
+            f"未安装 Codex 分发包 ({_safe_rel(codex_bin_path, workspace_root)})；"
             "请运行 harness2 setup <bench> --substrate cx"
         )
     else:
@@ -2555,7 +2593,40 @@ def get_executors_status(
             else "待配置 SEC_AGENT_HARNESS2_CODEX_BASE_URL / API_KEY"
         )
 
-    # 4. Improver, Judge & Vertex AI inspection
+    # 4. Pi Coding Agent (pi) Substrate inspection
+    from ..substrate.pi import find_pi_binary
+
+    pi_bin_path = find_pi_binary()
+    pi_cli_ok = pi_bin_path.is_file() and os.access(pi_bin_path, os.X_OK)
+    pi_bin = str(pi_bin_path) if pi_cli_ok else ""
+    ep_pi = api.pi()
+    pi_raw_key = os.environ.get("SEC_AGENT_HARNESS2_PI_API_KEY", "")
+    pi_has_key = bool((ep_pi and ep_pi.api_key) or pi_raw_key or os.environ.get("OPENAI_API_KEY"))
+    pi_model = config.SOLVER_MODEL_PI
+    pi_model_override = os.environ.get("SEC_AGENT_HARNESS2_PI_MODEL", "")
+    pi_effort = os.environ.get("SEC_AGENT_HARNESS2_PI_EFFORT", "high") or "high"
+    pi_base_override = os.environ.get("SEC_AGENT_HARNESS2_PI_BASE_URL", "")
+    pi_proto_override = os.environ.get("SEC_AGENT_HARNESS2_PI_PROTOCOL", "")
+    pi_effective_proto = ep_pi.protocol if ep_pi else (pi_proto_override or "openai-chat")
+    pi_using_unified = bool(unified_base_url and not pi_base_override)
+
+    if pi_cli_ok and pi_has_key:
+        pi_status = "ready"
+        pi_msg = (
+            f"Pi Coding Agent {config.PI_VERSION} 已就绪 · 协议 {pi_effective_proto} · "
+            f"{'复用统一 API' if pi_using_unified else (ep_pi.base_url if ep_pi else '默认端点')}"
+        )
+    elif not pi_cli_ok:
+        pi_status = "missing_deps"
+        pi_msg = (
+            f"未安装 Pi Coding Agent CLI 运行时 ({_safe_rel(config.PI_BIN, workspace_root)})；"
+            "请运行 harness2 setup <bench> --substrate pi"
+        )
+    else:
+        pi_status = "needs_config"
+        pi_msg = "Pi CLI 已就绪，待配置统一 API (SEC_AGENT_HARNESS2_API_*) 或 SEC_AGENT_HARNESS2_PI_*"
+
+    # 5. Improver, Judge & Vertex AI inspection
     improver_override = os.environ.get("SEC_AGENT_HARNESS2_IMPROVER_MODEL", "")
     judge_model = config.JUDGE_MODEL
     judge_base_override = os.environ.get("SEC_AGENT_HARNESS2_JUDGE_BASE_URL", "")
@@ -2572,7 +2643,7 @@ def get_executors_status(
     return {
         "active_executor": os.environ.get(
             "SEC_AGENT_HARNESS2_DEFAULT_EXECUTOR",
-            "claude" if (claude_cli_ok and claude_has_key) else "oc",
+            "claude" if (claude_cli_ok and claude_has_key) else ("pi" if (pi_cli_ok and pi_has_key) else "oc"),
         ),
         "unified_config": {
             "base_url": unified_base_url,
@@ -2689,6 +2760,40 @@ def get_executors_status(
                     "AGENTS.md + .agents/skills + .codex/hooks.json 表面",
                     "内置 Tools Schema 归一化 Launcher 与 Responses 转换桥",
                     "支持宿主机与 WorkBuddy Docker 容器双路由 (CONTAINER_URL)",
+                ],
+            },
+            {
+                "id": "pi",
+                "name": "Pi Coding Agent (pi)",
+                "title": f"Pi Coding Agent 执行基座 (@mariozechner/pi-coding-agent@{config.PI_VERSION})",
+                "category": "substrate",
+                "status": pi_status,
+                "status_message": pi_msg,
+                "cli_available": pi_cli_ok,
+                "cli_path": pi_bin,
+                "api_key_configured": pi_has_key,
+                "api_key_masked": _mask_secret(pi_raw_key or (ep_pi.api_key if ep_pi else "")),
+                "current_model": pi_model,
+                "model_override": pi_model_override,
+                "effort": pi_effort,
+                "base_url": pi_base_override,
+                "effective_base_url": ep_pi.base_url if ep_pi else "",
+                "protocol": pi_effective_proto,
+                "protocol_override": pi_proto_override,
+                "using_unified": pi_using_unified,
+                "resolved_endpoint": api.describe(ep_pi),
+                "supported_models": [
+                    "gpt-5.4",
+                    "gpt-4o",
+                    "claude-sonnet-4-6",
+                    "claude-3-7-sonnet-20250219",
+                    "gemini-2.5-pro",
+                ],
+                "capabilities": [
+                    "零膨胀极简基线与进程内 TS 扩展 (.pi/extensions/*.ts)",
+                    "双轨兼容 .pi/hooks.json 声明式钩子与 .pi/skills 技能表面",
+                    "原生支持 openai-completions, openai-responses, anthropic-messages 多协议",
+                    "运行时 -e 扩展桥接零污染支持子智能体 (c5) 与 MCP (c9)",
                 ],
             },
             {

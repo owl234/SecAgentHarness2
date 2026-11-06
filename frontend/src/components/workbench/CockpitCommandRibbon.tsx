@@ -48,10 +48,14 @@ export const CockpitCommandRibbon: React.FC<CockpitCommandRibbonProps> = ({
       ? 'OpenCode (oc)'
       : executorStatus?.active_executor === 'cx'
       ? 'Codex (cx)'
+      : executorStatus?.active_executor === 'pi'
+      ? 'Pi Coding Agent (pi)'
       : 'Claude Code';
 
   const activeEffort =
-    executorStatus?.executors.find((e) => e.id === 'claude')?.effort || 'high';
+    executorStatus?.executors.find(
+      (e) => e.id === (executorStatus?.active_executor === 'pi' ? 'pi' : 'claude')
+    )?.effort || 'high';
 
   return (
     <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-2.5 shadow-sm transition-all flex flex-wrap items-center justify-between gap-3">

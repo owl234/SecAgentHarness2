@@ -238,15 +238,28 @@ TRANSPORT_ATTEMPTS = 2
 PROPOSER_CONCURRENCY = 2
 
 
-def validate_models(*, judge: bool = False) -> None:
-    if not SOLVER_MODEL_OC:
-        raise ConfigError(
-            "SEC_AGENT_HARNESS2_SOLVER_MODEL is required for executor rollouts; set it in .env or "
-            "the shell, or set SEC_AGENT_HARNESS2_API_MODEL alongside SEC_AGENT_HARNESS2_API_BASE_URL "
-            "(see .env.example)"
-        )
-    if "/" not in SOLVER_MODEL_OC or "/" not in IMPROVER_MODEL:
-        raise ConfigError("Executor and improver models must use OpenCode's provider/model syntax")
+def validate_models(*, judge: bool = False, substrate: str = "oc") -> None:
+    if substrate == "pi":
+        if not SOLVER_MODEL_PI:
+            raise ConfigError(
+                "SEC_AGENT_HARNESS2_PI_MODEL is required for pi executor rollouts; set it in .env or "
+                "the shell, or set SEC_AGENT_HARNESS2_API_MODEL alongside SEC_AGENT_HARNESS2_API_BASE_URL"
+            )
+    elif substrate == "claude":
+        if not SOLVER_MODEL_CLAUDE:
+            raise ConfigError("SEC_AGENT_HARNESS2_CLAUDE_MODEL is required for claude executor rollouts")
+    elif substrate == "cx":
+        if not SOLVER_MODEL_CX:
+            raise ConfigError("SEC_AGENT_HARNESS2_CODEX_MODEL is required for codex executor rollouts")
+    else:
+        if not SOLVER_MODEL_OC:
+            raise ConfigError(
+                "SEC_AGENT_HARNESS2_SOLVER_MODEL is required for executor rollouts; set it in .env or "
+                "the shell, or set SEC_AGENT_HARNESS2_API_MODEL alongside SEC_AGENT_HARNESS2_API_BASE_URL "
+                "(see .env.example)"
+            )
+        if "/" not in SOLVER_MODEL_OC or "/" not in IMPROVER_MODEL:
+            raise ConfigError("Executor and improver models must use OpenCode's provider/model syntax")
     if any(m.startswith("google-vertex") for m in (SOLVER_MODEL_OC, IMPROVER_MODEL)):
         if not VERTEX_PROJECT:
             raise ConfigError("Set GOOGLE_CLOUD_PROJECT for Vertex AI")

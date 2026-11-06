@@ -118,6 +118,14 @@ class Proposer:
                         "ANTHROPIC_MODEL": self.spec.model,
                     }
                 )
+        elif self.spec.kind == "pi":
+            endpoint = api.pi()
+            if endpoint is not None:
+                api.pi_env(replace(endpoint, model=self.spec.model), e)
+            else:
+                e["PI_OFFLINE"] = "1"
+                e["PI_SKIP_VERSION_CHECK"] = "1"
+                e["PI_TELEMETRY"] = "0"
         else:
             e.update(
                 {
@@ -167,9 +175,13 @@ class Proposer:
                 if context_dir and Path(context_dir).is_dir():
                     shutil.copytree(context_dir, tmp / "context", dirs_exist_ok=True)
                 with _SEM if _SEM is not None else contextlib.nullcontext():
-                    text, cost, err = (
-                        self._claude_cli if self.spec.kind == "claude_cli" else self._opencode
-                    )(tmp, mission, system, wall)
+                    if self.spec.kind == "claude_cli":
+                        runner_fn = self._claude_cli
+                    elif self.spec.kind == "pi":
+                        runner_fn = self._pi
+                    else:
+                        runner_fn = self._opencode
+                    text, cost, err = runner_fn(tmp, mission, system, wall)
                 spent_usd += cost
                 if not text.strip():
                     last = err or "empty reply"
@@ -318,6 +330,70 @@ class Proposer:
         if text.strip():
             return text, cost, ""
         tail = _strip_oc_banner(p.stderr or "").strip()[-300:]
+        return "", cost, f"rc={p.returncode}: {err or tail or 'empty reply'}"
+
+    def _pi(self, cwd: Path, mission: str, system: str, wall: int) -> tuple[str, float, str]:
+        from ..substrate.pi import PI_BUILTIN_TOOLS, find_pi_binary
+
+        cwd.mkdir(parents=True, exist_ok=True)
+        (cwd / "MISSION.md").write_text(
+            (f"{system}\n\n---\n\n" if system else "") + mission, encoding="utf-8"
+        )
+        out = cwd / "output"
+        out.mkdir(exist_ok=True)
+        prompt = (
+            "Read MISSION.md first. Do what it asks. Reply with the requested output as "
+            "your final message AND save it verbatim to output/answer.md."
+        )
+        env = self.env()
+        endpoint = api.pi()
+        if endpoint is not None:
+            api.pi_env(
+                replace(endpoint, model=self.spec.model),
+                env,
+                agent_dir=cwd / ".pi_agent",
+            )
+        bare_model = (
+            self.spec.model.split("/", 1)[-1] if "/" in self.spec.model else self.spec.model
+        )
+        provider = (
+            self.spec.model.split("/", 1)[0]
+            if "/" in self.spec.model
+            else api.PI_PROVIDER
+        )
+        cmd = [
+            str(find_pi_binary()),
+            "-p",
+            prompt,
+            "--mode",
+            "json",
+            "--no-session",
+            "--tools",
+            PI_BUILTIN_TOOLS,
+            "--provider",
+            provider,
+            "--model",
+            bare_model,
+        ]
+        if self.spec.effort:
+            cmd += ["--thinking", self.spec.effort]
+        p = subprocess.run(
+            cmd,
+            cwd=cwd,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=wall,
+        )
+        cost = _pi_cost(p.stdout)
+        ans = out / "answer.md"
+        if ans.is_file() and ans.read_text(errors="replace").strip():
+            return ans.read_text(errors="replace"), cost, ""
+        text, err = _pi_stdout(p.stdout)
+        if text.strip():
+            return text, cost, ""
+        tail = (p.stderr or "").strip()[-300:]
         return "", cost, f"rc={p.returncode}: {err or tail or 'empty reply'}"
 
     def _harvest(self, tmp: Path, sub: str, label: str, cache_key: str = "") -> Path | None:
@@ -511,6 +587,65 @@ def _opencode_cost(stdout: str) -> float:
             c = part.get("cost")
             if isinstance(c, (int, float)):
                 total += float(c)
+    return round(total, 6)
+
+
+def _pi_stdout(stdout: str) -> tuple[str, str]:
+    """Extract assistant text and error messages from a `pi --mode json` event stream."""
+    texts: list[str] = []
+    errors: list[str] = []
+    saw_json = False
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(ev, dict):
+            continue
+        saw_json = True
+        ev_type = ev.get("type")
+        if ev_type == "message_end":
+            msg = _obj(ev, "message")
+            if msg.get("role") == "assistant":
+                for blk in msg.get("content") or []:
+                    if isinstance(blk, dict) and blk.get("type") == "text":
+                        t = blk.get("text")
+                        if isinstance(t, str) and t.strip():
+                            texts.append(t)
+                err_msg = str(msg.get("errorMessage") or "").strip()
+                if err_msg:
+                    errors.append(err_msg)
+        elif ev_type == "error":
+            err_msg = str(ev.get("message") or ev.get("error") or "").strip()
+            if err_msg:
+                errors.append(err_msg)
+    if not saw_json:
+        return (stdout or "").strip(), ""
+    return "\n\n".join(texts), "; ".join(errors)[-300:]
+
+
+def _pi_cost(stdout: str) -> float:
+    """Sum `message.usage.cost.total` over `message_end` events in a `pi --mode json` stream."""
+    total = 0.0
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            ev = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(ev, dict) or ev.get("type") != "message_end":
+            continue
+        msg = _obj(ev, "message")
+        usage = _obj(msg, "usage")
+        cost = _obj(usage, "cost")
+        c = cost.get("total")
+        if isinstance(c, (int, float)):
+            total += float(c)
     return round(total, 6)
 
 

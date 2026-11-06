@@ -560,6 +560,216 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
       )}
 
       {/* ------------------------------------------------------- */}
+      {/* PI CODING AGENT SUBSTRATE CONFIGURATION                */}
+      {/* ------------------------------------------------------- */}
+      {selectedTab === 'pi' && (
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+              {tx(
+                'Pi 模型 ID (SEC_AGENT_HARNESS2_PI_MODEL · 留空默认复用统一 API 模型)',
+                'Pi Model ID (SEC_AGENT_HARNESS2_PI_MODEL · blank inherits Unified API model)'
+              )}
+            </label>
+            <input
+              type="text"
+              value={form.piModel}
+              onChange={(e) => updateForm({ piModel: e.target.value })}
+              placeholder="gpt-5.4"
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
+            />
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {activeExecutor.supported_models.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => updateForm({ piModel: m })}
+                  className={`px-2 py-0.5 text-[10px] font-mono rounded-md border cursor-pointer ${
+                    form.piModel === m
+                      ? 'bg-pink-500/15 text-pink-600 dark:text-pink-300 border-pink-500/40 font-semibold'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-pink-400'
+                  }`}
+                >
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Reasoning Effort Selector */}
+          <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-amber-500" />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {tx(
+                    '思考与推理强度 (SEC_AGENT_HARNESS2_PI_EFFORT · 传递为 pi --thinking)',
+                    'Reasoning Effort (SEC_AGENT_HARNESS2_PI_EFFORT · passed as pi --thinking)'
+                  )}
+                </span>
+              </div>
+              <span className="text-xs font-mono font-bold text-pink-600 dark:text-pink-400 bg-pink-500/10 px-2.5 py-0.5 rounded-full border border-pink-500/20">
+                {form.piEffort.toUpperCase()}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  {
+                    id: 'low',
+                    label: tx('Low (轻量快速)', 'Low (Fast)'),
+                    desc: tx('低延迟快速验证', 'Low-latency verification'),
+                  },
+                  {
+                    id: 'medium',
+                    label: tx('Medium (均衡)', 'Medium (Balanced)'),
+                    desc: tx('兼顾速度与推理深度', 'Balanced speed & reasoning'),
+                  },
+                  {
+                    id: 'high',
+                    label: tx('High (推荐默认)', 'High (Recommended)'),
+                    desc: tx('深度思考与严密自检', 'Deep thinking & verification'),
+                  },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => updateForm({ piEffort: opt.id })}
+                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    form.piEffort === opt.id
+                      ? 'bg-pink-500/10 border-pink-500 text-pink-950 dark:text-pink-200 ring-1 ring-pink-500'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <div className="text-xs font-bold">{opt.label}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                {tx('专属端点覆盖 (SEC_AGENT_HARNESS2_PI_BASE_URL)', 'Endpoint Override (SEC_AGENT_HARNESS2_PI_BASE_URL)')}
+              </label>
+              <input
+                type="text"
+                value={form.piBaseUrl}
+                onChange={(e) => updateForm({ piBaseUrl: e.target.value })}
+                placeholder={
+                  unifiedCfg?.base_url
+                    ? tx(
+                        `留空默认继承统一 API (${unifiedCfg.base_url})`,
+                        `Blank inherits Unified API (${unifiedCfg.base_url})`
+                      )
+                    : 'https://api.openai.com/v1'
+                }
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                {tx('线协议 (SEC_AGENT_HARNESS2_PI_PROTOCOL)', 'Wire Protocol (SEC_AGENT_HARNESS2_PI_PROTOCOL)')}
+              </label>
+              <select
+                value={form.piProtocol}
+                onChange={(e) => updateForm({ piProtocol: e.target.value })}
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+              >
+                <option value="">{tx('默认 (openai-chat Completions)', 'Default (openai-chat Completions)')}</option>
+                <option value="openai-chat">openai-chat (OpenAI Chat / Completions)</option>
+                <option value="openai-responses">openai-responses (OpenAI Responses API)</option>
+                <option value="anthropic">anthropic (Anthropic Messages API)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Key className="w-3.5 h-3.5 text-slate-400" />
+                <span>
+                  {tx(
+                    '专属密钥覆盖 (SEC_AGENT_HARNESS2_PI_API_KEY)',
+                    'API Key Override (SEC_AGENT_HARNESS2_PI_API_KEY)'
+                  )}
+                </span>
+              </label>
+              <button
+                type="button"
+                onClick={onToggleShowApiKey}
+                className="text-[11px] text-blue-500 hover:underline cursor-pointer"
+              >
+                {showApiKey ? tx('隐藏密文', 'Hide Key') : tx('显示密文', 'Show Key')}
+              </button>
+            </div>
+            <input
+              type={showApiKey ? 'text' : 'password'}
+              value={form.piApiKey}
+              onChange={(e) => updateForm({ piApiKey: e.target.value })}
+              placeholder={
+                activeExecutor.api_key_configured
+                  ? tx(
+                      `已配置 (${activeExecutor.api_key_masked || '继承自统一API'}) · 留空保持不变`,
+                      `Configured (${activeExecutor.api_key_masked || 'Inherited'}) · Leave blank to keep`
+                    )
+                  : 'sk-...'
+              }
+              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+          <div className="bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+            <div className="min-w-0 pr-2">
+              <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span>
+                  {tx(
+                    '项目隔离运行时 (dependencies/pi/bin/pi)',
+                    'Isolated CLI Runtime (dependencies/pi/bin/pi)'
+                  )}
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
+                {activeExecutor.cli_available
+                  ? activeExecutor.cli_path
+                  : tx(
+                      '未安装 · 请运行 sec-agent-harness2 setup <bench> --substrate pi',
+                      'Not installed · Run sec-agent-harness2 setup <bench> --substrate pi'
+                    )}
+              </div>
+            </div>
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-semibold shrink-0 ${
+                activeExecutor.cli_available
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+              }`}
+            >
+              {activeExecutor.cli_available ? tx('已就绪', 'Ready') : tx('待安装', 'Missing')}
+            </span>
+          </div>
+
+          <div className="p-3 bg-pink-50/50 dark:bg-pink-950/20 border border-pink-200 dark:border-pink-800/50 rounded-xl text-xs space-y-1.5 text-slate-700 dark:text-slate-300">
+            <div className="font-bold flex items-center gap-1.5 text-pink-700 dark:text-pink-300">
+              <FileCode2 className="w-4 h-4 text-pink-500" />
+              <span>{tx('Pi 原生 models.json 编译规范与无锁并发', 'Pi models.json Compilation Specification')}</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-slate-500 dark:text-slate-400">
+              {tx(
+                '通过独立 PI_CODING_AGENT_DIR 隔离 models.json，严格遵循 camelCase baseUrl 规范并写入 reasoning: true、maxTokens: 64000。',
+                'Isolates models.json via distinct PI_CODING_AGENT_DIR, enforcing camelCase baseUrl, reasoning: true, and maxTokens: 64000.'
+              )}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------- */}
       {/* IMPROVER, JUDGE & VERTEX AI CONFIGURATION               */}
       {/* ------------------------------------------------------- */}
       {selectedTab === 'vertex' && (

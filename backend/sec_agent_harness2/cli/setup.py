@@ -116,6 +116,8 @@ def main(argv=None):
             install.codex(dry_run=dry)
         elif args.substrate == "claude":
             install.claude(dry_run=dry)
+        elif args.substrate == "pi":
+            install.pi(dry_run=dry)
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         p.exit(1, I18N.t("setup.failed", lang, e=exc) + "\n")
     print(

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 
@@ -44,12 +45,16 @@ def check(adapter, *, judge=False) -> list[str]:
             errors.append(f"{label}: {type(exc).__name__}; see README.md")
             return False
 
-    for validate in (
-        lambda: config.validate_models(judge=judge),
+    sub_name = getattr(getattr(adapter, "substrate", None), "name", "oc")
+    validations = [
+        lambda: config.validate_models(judge=judge, substrate=sub_name),
         adapter.tasks,
-        OpencodeSubstrate().preflight,
         adapter.preflight,
-    ):
+    ]
+    if sub_name == "oc":
+        validations.append(OpencodeSubstrate().preflight)
+
+    for validate in validations:
         try:
             validate()
         except (OSError, RuntimeError, ValueError) as exc:
@@ -58,7 +63,8 @@ def check(adapter, *, judge=False) -> list[str]:
     bench = adapter.spec.name.split("-", 1)[0]
     name = {"jb": "job-bench-eval", "lab": "harvey-labs", "wb": "workbuddy-bench"}[bench]
     repo = config.DEPENDENCIES / name
-    for dependency in (name, "opencode"):
+    deps_to_check = [name, "opencode"] if sub_name == "oc" else [name]
+    for dependency in deps_to_check:
         target = config.DEPENDENCIES / dependency
         if (target / ".git").exists():
             try:
@@ -74,8 +80,43 @@ def check(adapter, *, judge=False) -> list[str]:
             f"{dependency} patch",
             ["git", "-C", target, "apply", "--reverse", "--check", patch],
         )
-    if not (config.OPENCODE_DIR / "node_modules").is_dir():
+    if sub_name == "oc" and not (config.OPENCODE_DIR / "node_modules").is_dir():
         errors.append(I18N.t("preflight.oc_missing", I18N.get_lang(), b=bench))
+
+    if sub_name == "pi":
+        from . import api
+        from .substrate.pi import find_pi_binary
+
+        pi_bin = find_pi_binary()
+        if not pi_bin.is_file() or not os.access(pi_bin, os.X_OK):
+            errors.append(
+                f"Pi Coding Agent binary missing or not executable at {pi_bin}; "
+                "run 'harness2 setup <benchmark> --substrate pi' to install"
+            )
+        else:
+            want = getattr(config, "PI_VERSION", "")
+            if want:
+                try:
+                    r = subprocess.run(
+                        [str(pi_bin), "--version"],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    if want not in (r.stdout or ""):
+                        errors.append(
+                            f"pi at {pi_bin} reports {r.stdout.strip()!r}, expected {want}; "
+                            "rerun 'harness2 setup <benchmark> --substrate pi'"
+                        )
+                except (OSError, subprocess.TimeoutExpired) as exc:
+                    errors.append(f"could not probe pi version at {pi_bin}: {exc}")
+
+        ep = api.pi()
+        if ep is None or not (ep.api_key or ep.base_url):
+            errors.append(
+                "Pi API endpoint not configured; set SEC_AGENT_HARNESS2_PI_BASE_URL / "
+                "SEC_AGENT_HARNESS2_PI_API_KEY (or SEC_AGENT_HARNESS2_API_*)"
+            )
 
     if any(
         m.startswith("google-vertex") for m in (config.SOLVER_MODEL_OC, config.IMPROVER_MODEL)
@@ -121,6 +162,11 @@ def check(adapter, *, judge=False) -> list[str]:
                 "WorkBuddy document rendering",
                 [config.WB_RENDER_PY, "-c", "import openpyxl, pptx"],
                 remedy="install 'harness2[render]' in the main environment",
+            )
+        if sub_name == "pi" and not (config.PI_DIST / "node_modules" / ".bin" / "pi").is_file():
+            errors.append(
+                f"WorkBuddy pi-harness requires mounted /opt/pi distribution at {config.PI_DIST}; "
+                "run 'harness2 setup wb --substrate pi'"
             )
         probe(
             "WorkBuddy runtime",

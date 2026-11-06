@@ -15,6 +15,7 @@ export const en: Record<ZhKey, string> = {
   'nav.library': 'Experience Library',
   'nav.benchmark': 'Benchmark Matrix',
   'nav.executor': 'API & Substrates',
+  'nav.executor_title': 'Configure Unified API and Claude / OpenCode / Codex / Pi Substrates',
   'nav.running': 'Running',
   'nav.ready': 'Ready',
   'nav.offline': 'Offline',

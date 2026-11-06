@@ -1,6 +1,6 @@
 import { ExecutorStatusResponse } from '../../types';
 
-export type DrawerTabId = 'unified' | 'claude' | 'oc' | 'cx' | 'vertex';
+export type DrawerTabId = 'unified' | 'claude' | 'oc' | 'cx' | 'pi' | 'vertex';
 
 export interface ExecutorFormValues {
   // 0. Unified API (SEC_AGENT_HARNESS2_API_*)
@@ -25,7 +25,13 @@ export interface ExecutorFormValues {
   cxContainerUrl: string;
   cxApiKey: string;
   bridgeHost: '127.0.0.1' | '0.0.0.0';
-  // 4. Improver / Judge / Vertex AI
+  // 4. Pi Coding Agent
+  piModel: string;
+  piEffort: 'low' | 'medium' | 'high';
+  piBaseUrl: string;
+  piApiKey: string;
+  piProtocol: string;
+  // 5. Improver / Judge / Vertex AI
   improverModel: string;
   judgeModel: string;
   judgeBaseUrl: string;
@@ -53,6 +59,11 @@ export const INITIAL_EXECUTOR_FORM: ExecutorFormValues = {
   cxContainerUrl: '',
   cxApiKey: '',
   bridgeHost: '127.0.0.1',
+  piModel: '',
+  piEffort: 'high',
+  piBaseUrl: '',
+  piApiKey: '',
+  piProtocol: '',
   improverModel: '',
   judgeModel: '',
   judgeBaseUrl: '',
@@ -106,6 +117,16 @@ export function buildFormFromExecutorsData(
     next.cxModel = cx.model_override || cx.current_model || '';
     next.cxBaseUrl = cx.base_url || '';
     next.cxContainerUrl = cx.container_url || '';
+  }
+
+  const pi = data.executors.find((e) => e.id === 'pi');
+  if (pi) {
+    next.piModel = pi.model_override || pi.current_model || '';
+    if (pi.effort === 'low' || pi.effort === 'medium' || pi.effort === 'high') {
+      next.piEffort = pi.effort;
+    }
+    next.piBaseUrl = pi.base_url || '';
+    next.piProtocol = pi.protocol_override || '';
   }
 
   return next;

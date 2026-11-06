@@ -24,7 +24,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-
 STEP_NODES = [
     {"index": 0, "nodeId": "s1-task-in", "stage": 1, "title": "任务规格与隔离接入"},
     {"index": 1, "nodeId": "s1-prior-lib", "stage": 1, "title": "领域经验库先验"},
@@ -43,35 +42,35 @@ STEP_NODES = [
 
 def detect_lifecycle_step(line: str) -> int | None:
     """Identify stage transition step (0..11) from log stream."""
-    l = line.lower()
-    if "[lifecycle:" in l:
+    line_lower = line.lower()
+    if "[lifecycle:" in line_lower:
         for s in STEP_NODES:
-            if s["nodeId"].lower() in l or f":{s['index']}]" in l:
+            if s["nodeId"].lower() in line_lower or f":{s['index']}]" in line_lower:
                 return s["index"]
 
-    if any(k in l for k in ("index.md", "update_library", "persisting", "沉淀", "已写入经验库")):
+    if any(k in line_lower for k in ("index.md", "update_library", "persisting", "沉淀", "已写入经验库")):
         return 11
-    if any(k in l for k in ("reflector", "reflecting", "cue", "lesson", "反思提炼")):
+    if any(k in line_lower for k in ("reflector", "reflecting", "cue", "lesson", "反思提炼")):
         return 10
-    if any(k in l for k in ("chosen_label", "selection", "blind judge", "盲选", "裁决")):
+    if any(k in line_lower for k in ("chosen_label", "selection", "blind judge", "盲选", "裁决")):
         return 9
-    if any(k in l for k in ("compose", "composition", "agg", "seq", "合成", "精炼")):
+    if any(k in line_lower for k in ("compose", "composition", "agg", "seq", "合成", "精炼")):
         return 8
-    if any(k in l for k in ("_roll_many", "probe rollout", "rolling candidates", "并发探针")):
+    if any(k in line_lower for k in ("_roll_many", "probe rollout", "rolling candidates", "并发探针")):
         return 7
-    if any(k in l for k in ("surfacespec", "validation", "validate", "规范网关", "语法校验")):
+    if any(k in line_lower for k in ("surfacespec", "validation", "validate", "规范网关", "语法校验")):
         return 6
-    if any(k in l for k in ("dom", "skill", "script", "subagent", "领域杠杆")):
+    if any(k in line_lower for k in ("dom", "skill", "script", "subagent", "领域杠杆")):
         return 5
-    if any(k in l for k in ("inv", "prompt", "guardrail", "tool contract", "工程杠杆")):
+    if any(k in line_lower for k in ("inv", "prompt", "guardrail", "tool contract", "工程杠杆")):
         return 4
-    if any(k in l for k in ("contrastive evidence", "context.build", "差异切片", "证据包")):
+    if any(k in line_lower for k in ("contrastive evidence", "context.build", "差异切片", "证据包")):
         return 3
-    if any(k in l for k in ("_roll_bases", "baseline probe", "base rollout", "基线探针")):
+    if any(k in line_lower for k in ("_roll_bases", "baseline probe", "base rollout", "基线探针")):
         return 2
-    if any(k in l for k in ("library prior", "prior domain", "冷启动先验", "加载经验库")):
+    if any(k in line_lower for k in ("library prior", "prior domain", "冷启动先验", "加载经验库")):
         return 1
-    if any(k in l for k in ("taskspec", "spec seam", "started", "任务启动", "规格接入")):
+    if any(k in line_lower for k in ("taskspec", "spec seam", "started", "任务启动", "规格接入")):
         return 0
     return None
 

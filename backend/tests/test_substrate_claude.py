@@ -321,8 +321,8 @@ def test_workbuddy_codex_job_yaml_structure(monkeypatch, tmp_path):
 
 
 def test_codex_substrate_preflight_auto_probes_and_heals(monkeypatch, tmp_path):
-    from sec_agent_harness2.substrate.codex import CodexSubstrate
     from sec_agent_harness2 import api, install
+    from sec_agent_harness2.substrate.codex import CodexSubstrate
 
     monkeypatch.setenv("SEC_AGENT_HARNESS2_API_BASE_URL", "https://chat-gateway.upstream.com/v1")
     monkeypatch.setenv("SEC_AGENT_HARNESS2_API_KEY", "upstream-secret-key")
@@ -379,8 +379,8 @@ def test_codex_substrate_preflight_auto_probes_and_heals(monkeypatch, tmp_path):
 
 
 def test_jobbench_codex_exec_env_receives_bridge_key(monkeypatch, tmp_path):
-    from sec_agent_harness2.substrate.codex import CodexSubstrate
     from sec_agent_harness2 import api
+    from sec_agent_harness2.substrate.codex import CodexSubstrate
 
     monkeypatch.setenv("SEC_AGENT_HARNESS2_API_BASE_URL", "https://chat-gateway.upstream.com/v1")
     monkeypatch.setenv("SEC_AGENT_HARNESS2_API_KEY", "upstream-secret-key")

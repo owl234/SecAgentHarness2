@@ -30,7 +30,7 @@ from .tree import SurfaceSpec
 
 ModelId = str
 
-CHANNELS = ("claude_cli", "opencode")
+CHANNELS = ("claude_cli", "opencode", "pi")
 
 
 @dataclass(frozen=True)
@@ -132,6 +132,7 @@ INSTALL_MODES = (
     "workspace_config",
     "codex_root",
     "claude_root",
+    "pi_root",
 )
 
 

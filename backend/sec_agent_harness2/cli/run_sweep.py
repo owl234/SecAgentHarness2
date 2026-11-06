@@ -235,13 +235,15 @@ def _main(args: argparse.Namespace) -> int:
 
 def _check_identity(adapter, args, namespace_dir: Path) -> None:
     """Prevent a resumed run or library from silently mixing models or task partitions."""
+    executor_map = {
+        "oc": config.SOLVER_MODEL_OC,
+        "cx": config.SOLVER_MODEL_CX,
+        "claude": config.SOLVER_MODEL_CLAUDE,
+        "pi": config.SOLVER_MODEL_PI,
+    }
     identity = {
         "method_version": config.METHOD_VERSION,
-        "executor": (
-            config.SOLVER_MODEL_OC
-            if args.substrate == "oc"
-            else (config.SOLVER_MODEL_CX if args.substrate == "cx" else config.SOLVER_MODEL_CLAUDE)
-        ),
+        "executor": executor_map.get(args.substrate, config.SOLVER_MODEL_CLAUDE),
         "improver": config.IMPROVER_MODEL,
         "judge": config.JUDGE_MODEL,
         "project": config.VERTEX_PROJECT,

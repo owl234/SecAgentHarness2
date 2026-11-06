@@ -138,6 +138,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
   const claudeSub = executorsData?.executors.find((e) => e.id === 'claude');
   const ocSub = executorsData?.executors.find((e) => e.id === 'oc');
   const cxSub = executorsData?.executors.find((e) => e.id === 'cx');
+  const piSub = executorsData?.executors.find((e) => e.id === 'pi');
 
   const hasApiKey = Boolean(form.unifiedApiKey || unifiedCfg?.api_key_configured);
   const isBaseReady = Boolean(form.unifiedBaseUrl && hasApiKey);
@@ -667,8 +668,8 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               {tx(
-                '保存后，所选模型将一次性编译并分发至项目所支持的全部 5 大基座与角色通道：',
-                'Upon save, the selected model compiles and dispatches to all 5 substrates & role channels:'
+                '保存后，所选模型将一次性编译并分发至项目所支持的全部 6 大基座与角色通道：',
+                'Upon save, the selected model compiles and dispatches to all 6 substrates & role channels:'
               )}
             </p>
 
@@ -776,7 +777,43 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                 </div>
               </div>
 
-              {/* 4. Improver */}
+              {/* 4. Pi Coding Agent */}
+              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-1.5 rounded-lg bg-pink-500/10 text-pink-500 border border-pink-500/20">
+                    <Activity className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                      <span>Pi Coding Agent (pi)</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
+                        {form.unifiedProtocol === 'anthropic' ? 'anthropic-messages' : 'openai-completions'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5">
+                      {tx('派生模型: ', 'Mapped model: ')}
+                      <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">
+                        {activeModelDisplay}
+                      </span>
+                      <span className="text-slate-400 text-[10px] ml-1.5">
+                        {tx('→ 自动写入 models.json', '→ Written to models.json')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px]">
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      piSub?.status === 'ready' ? 'bg-emerald-500' : 'bg-slate-400'
+                    }`}
+                  />
+                  <span className="text-slate-600 dark:text-slate-400 font-medium">
+                    {piSub?.status === 'ready' ? tx('就绪', 'Ready') : tx('待配置', 'Pending')}
+                  </span>
+                </div>
+              </div>
+
+              {/* 5. Improver */}
               <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500 border border-purple-500/20">
@@ -805,7 +842,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                 </div>
               </div>
 
-              {/* 5. Judge */}
+              {/* 6. Judge */}
               <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">

@@ -238,7 +238,9 @@ class CodexSubstrate:
         env["PATH"] = str(Path(config.CODEX_DIST) / "codex-path") + os.pathsep + env.get("PATH", "")
         endpoint = api.codex()
         if endpoint is not None and endpoint.api_key:
-            env.setdefault("VERTEX_PROXY_KEY", endpoint.api_key)
+            env["VERTEX_PROXY_KEY"] = endpoint.api_key
+        elif config.VERTEX_PROXY_KEY:
+            env["VERTEX_PROXY_KEY"] = config.VERTEX_PROXY_KEY
         return env
 
     def execute(
@@ -265,7 +267,57 @@ class CodexSubstrate:
         """Check the CLI and Responses endpoint, including container configuration."""
         from urllib.parse import urlparse
 
+        wire_mode = os.environ.get("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE", "")
+        bridge_file = config.DEPENDENCIES / "codex" / "responses-bridge.json"
+        if not wire_mode and bridge_file.is_file():
+            try:
+                wire_mode = json.loads(bridge_file.read_text(encoding="utf-8")).get("wire_mode", "")
+            except Exception:
+                pass
+
+        if not wire_mode:
+            up_url = (
+                os.environ.get("SEC_AGENT_HARNESS2_CODEX_BASE_URL")
+                or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL")
+                or config.API_BASE_URL
+            )
+            up_key = (
+                os.environ.get("SEC_AGENT_HARNESS2_CODEX_API_KEY")
+                or os.environ.get("SEC_AGENT_HARNESS2_API_KEY")
+                or config.API_KEY
+            )
+            if up_url:
+                probe_res = api.probe_upstream_responses_capability(up_url, up_key)
+                wire_mode = probe_res.get("wire_mode", "bridge")
+                bridge_file.parent.mkdir(parents=True, exist_ok=True)
+                from ..cli.responses_bridge import _endpoint
+
+                ep_data = _endpoint(bridge_file)
+                ep_data["wire_mode"] = wire_mode
+                bridge_file.write_text(json.dumps(ep_data, indent=2) + "\n", encoding="utf-8")
+                bridge_file.chmod(0o600)
+
         endpoint = api.codex()
+        if endpoint is not None and endpoint.base_url:
+            p = urlparse(endpoint.base_url)
+            if wire_mode == "bridge" or p.hostname in ("127.0.0.1", "localhost", "0.0.0.0"):
+                from ..cli.responses_bridge import ensure_bridge_running
+
+                try:
+                    ensure_bridge_running()
+                    endpoint = api.codex()
+                except Exception as exc:
+                    raise RuntimeError(f"Failed to auto-start responses bridge: {exc}") from exc
+
+        # Auto-heal config.toml if missing or stale
+        from .. import install
+
+        if install.codex_config_error() is not None:
+            try:
+                install.configure_codex()
+            except Exception:
+                pass
+
         if endpoint is None or not endpoint.base_url:
             raise config.ConfigError(
                 "SEC_AGENT_HARNESS2_CODEX_BASE_URL is required for the Codex Responses endpoint; "

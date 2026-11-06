@@ -42,6 +42,7 @@ from ..substrate.base import Install, RunRequest
 from ..substrate.claude import ClaudeSubstrate, find_claude_binary
 from ..substrate.codex import CodexSubstrate
 from ..substrate.opencode import OUTPUT_TOKEN_MAX, OpencodeSubstrate
+from ..substrate.pi import PiSubstrate, find_pi_binary
 from .tasks import discover, select
 
 _RUNNER_DIR = config.THIRD_PARTY / "jb_runner"
@@ -50,9 +51,11 @@ _STORE_SEED_LOCK = threading.Lock()
 OC_RUNNER = Path(__file__).resolve().parent / "jb_opencode_runner.py"
 CX_RUNNER = _RUNNER_DIR / "run_benchmark_codex_cli_adapt.sh"
 CLAUDE_RUNNER = _RUNNER_DIR / "run_benchmark_claude_cli_adapt.sh"
+PI_RUNNER = _RUNNER_DIR / "run_benchmark_pi_cli_adapt.sh"
 OC_BASE_HARNESS = _RUNNER_DIR / "harness_baseline_oc"
 CX_BASE_HARNESS = _RUNNER_DIR / "codex_base_harness"
 CLAUDE_BASE_HARNESS = _RUNNER_DIR / "claude_base_harness"
+PI_BASE_HARNESS = _RUNNER_DIR / "pi_base_harness"
 
 
 def run_detached(cmd: list[str], *, timeout: int, **kw) -> None:
@@ -497,9 +500,14 @@ def render_opencode_tree(staged: Path, render_dir: Path, ctx: dict) -> None:
             shutil.copy(p, rd / ".opencode" / "plugin" / p.name)
 
 
-_INSTALL_MODE = {"oc": "workspace_agents_md", "cx": "codex_root", "claude": "claude_root"}
+_INSTALL_MODE = {
+    "oc": "workspace_agents_md",
+    "cx": "codex_root",
+    "claude": "claude_root",
+    "pi": "pi_root",
+}
 
-_DEFAULT_TIMEOUT = {"oc": 2400, "cx": 3600, "claude": 3600}
+_DEFAULT_TIMEOUT = {"oc": 2400, "cx": 3600, "claude": 3600, "pi": 3600}
 
 
 def _channels() -> dict:
@@ -510,7 +518,9 @@ def _channels() -> dict:
 
 def make_spec(substrate: str) -> BenchSpec:
     if substrate not in _INSTALL_MODE:
-        raise ValueError(f"JobBench substrate must be 'oc', 'cx', or 'claude', got {substrate!r}")
+        raise ValueError(
+            f"JobBench substrate must be 'oc', 'cx', 'claude', or 'pi', got {substrate!r}"
+        )
     return BenchSpec(
         name="jb",
         runs_root=config.RUNS / "jb",
@@ -519,7 +529,7 @@ def make_spec(substrate: str) -> BenchSpec:
         channels=_channels(),
         domain_word="profession",
         leak_globs=("RUBRICS.json", "eval_result/**", "expected/**", "reference/**"),
-        allow_subagents=(substrate in ("oc", "claude")),
+        allow_subagents=(substrate in ("oc", "claude", "pi")),
         obs_trunc=config.JB_OBS_TRUNC,
         proposer_deliverables="contents",
     )
@@ -644,8 +654,13 @@ class JobBenchAdapter:
         elif substrate == "claude":
             launcher = self._launch_claude
             self.substrate = ClaudeSubstrate(launcher=launcher)
+        elif substrate == "pi":
+            launcher = self._launch_pi
+            self.substrate = PiSubstrate(launcher=launcher)
         else:
-            raise ValueError(f"JobBench substrate must be 'oc', 'cx', or 'claude', got {substrate!r}")
+            raise ValueError(
+                f"JobBench substrate must be 'oc', 'cx', 'claude', or 'pi', got {substrate!r}"
+            )
         self.timeout = int(timeout or _DEFAULT_TIMEOUT[substrate])
         self.store = Path(store_root) if store_root else config.RUNS / "jb" / "dataset"
 
@@ -823,6 +838,8 @@ class JobBenchAdapter:
         stale = codex_config_error()
         if stale is not None:
             raise RuntimeError(stale)
+        endpoint = api.codex()
+        codex_key = endpoint.api_key if endpoint and endpoint.api_key else config.VERTEX_PROXY_KEY
         env = self.substrate.exec_env(os.environ, codex_home=codex_home)
         env.update(
             {
@@ -834,9 +851,10 @@ class JobBenchAdapter:
                 "BENCHMARK_MODELS": config.SOLVER_MODEL_CX,
                 "MAX_CONCURRENT_PER_MODEL": "1",
                 "TIMEOUT_PER_TASK": str(t),
-                "VERTEX_PROXY_KEY": config.VERTEX_PROXY_KEY,
             }
         )
+        if codex_key:
+            env["VERTEX_PROXY_KEY"] = codex_key
         self._run_runner(CX_RUNNER, env, wall=t + 600, label=label)
         return [self._require_artifacts(task_id, label)]
 
@@ -861,6 +879,34 @@ class JobBenchAdapter:
             }
         )
         self._run_runner(CLAUDE_RUNNER, env, wall=t + 600, label=label)
+        return [self._require_artifacts(task_id, label)]
+
+    def _launch_pi(self, req: RunRequest, install: Install) -> list[Path]:
+        task_id, label, t = self._launch_common(req)
+        self.substrate.preflight()
+        binary = find_pi_binary()
+        model = os.environ.get("SEC_AGENT_HARNESS2_PI_MODEL", config.SOLVER_MODEL_PI)
+        effort = os.environ.get("SEC_AGENT_HARNESS2_PI_EFFORT", "high")
+        env = self.substrate.exec_env(
+            os.environ,
+            workspace=install.staging_dir,
+            model=model,
+            agent_dir=install.staging_dir / "_pi_agent",
+        )
+        env.update(
+            {
+                "SEC_AGENT_HARNESS2_PI_BIN": str(binary),
+                "TASK_IDS": task_id,
+                "LABEL": label,
+                "HARNESS_RENDER_DIR": str(install.staging_dir),
+                "TASKS_BASE_DIR": str(self.store),
+                "BENCHMARK_MODELS": model,
+                "REASONING_EFFORT": effort,
+                "MAX_CONCURRENT_PER_MODEL": "1",
+                "TIMEOUT_PER_TASK": str(t),
+            }
+        )
+        self._run_runner(PI_RUNNER, env, wall=t + 600, label=label)
         return [self._require_artifacts(task_id, label)]
 
     def _run_runner(self, runner: Path, env: dict, *, wall: int, label: str) -> None:
@@ -986,6 +1032,8 @@ class JobBenchAdapter:
             base = OC_BASE_HARNESS
         elif self.substrate.name == "claude":
             base = CLAUDE_BASE_HARNESS
+        elif self.substrate.name == "pi":
+            base = PI_BASE_HARNESS
         else:
             base = CX_BASE_HARNESS
         if not HT.is_tree(self.substrate.surface(), base):

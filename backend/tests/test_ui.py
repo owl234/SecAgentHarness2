@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import unittest
+import unittest.mock
 from pathlib import Path
 
 from starlette.testclient import TestClient
@@ -257,6 +258,34 @@ class UITests(unittest.TestCase):
                     res_uni.json()["executors"]["unified_config"]["base_url"],
                     "https://example.invalid/v1",
                 )
+
+                # Test codex-bridge status endpoint
+                res_status = tmp_client.get("/api/executor/codex-bridge/status")
+                self.assertEqual(res_status.status_code, 200)
+                status_data = res_status.json()
+                self.assertIn("wire_mode", status_data)
+                self.assertIn("local_url", status_data)
+                self.assertIn("container_url", status_data)
+                self.assertTrue(status_data["auth_enabled"])
+
+                # Test codex-bridge reprobe endpoint (mocking probe)
+                from sec_agent_harness2 import api
+                monkeypatch = unittest.mock.patch.object(
+                    api,
+                    "probe_upstream_responses_capability",
+                    return_value={"wire_mode": "bridge", "status_code": 404, "latency_ms": 12, "message": "Bridge managed", "url": "https://example.invalid/v1/responses"}
+                )
+                with monkeypatch:
+                    res_probe = tmp_client.post(
+                        "/api/executor/codex-bridge/reprobe",
+                        json={"base_url": "https://example.invalid/v1", "api_key": "test-key"},
+                    )
+                    self.assertEqual(res_probe.status_code, 200)
+                    probe_body = res_probe.json()
+                    self.assertIn("probe", probe_body)
+                    self.assertEqual(probe_body["probe"]["wire_mode"], "bridge")
+                    self.assertEqual(probe_body["bridge"]["wire_mode"], "bridge")
+                    self.assertTrue(probe_body["bridge"]["key_configured"])
             finally:
                 os.environ.clear()
                 os.environ.update(saved_env)

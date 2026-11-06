@@ -276,7 +276,7 @@ class ExecutionManager:
         upstream: str,
         api_key: str,
         *,
-        host: str = "127.0.0.1",
+        host: str = "0.0.0.0",
         port: int = 0,
     ) -> dict[str, Any]:
         """Start or restart the background `harness2.cli.responses_bridge` process."""
@@ -353,8 +353,26 @@ class ExecutionManager:
 
     async def stop_bridge(self) -> dict[str, Any]:
         """Terminate the managed Responses Bridge process if running."""
+        import json
+        import signal
+
         proc = self.bridge_process
         if proc is None or proc.returncode is not None:
+            # Also check if a standalone daemon is recorded in responses-bridge.json
+            bridge_json = self.workspace_root / "dependencies" / "codex" / "responses-bridge.json"
+            if bridge_json.is_file():
+                try:
+                    data = json.loads(bridge_json.read_text(encoding="utf-8"))
+                    daemon_pid = data.get("pid")
+                    if daemon_pid:
+                        os.kill(daemon_pid, signal.SIGTERM)
+                        data.pop("pid", None)
+                        bridge_json.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+                        self.bridge_process = None
+                        self.bridge_meta["running"] = False
+                        return {"stopped": True, "message": f"Responses 转换桥守护进程 (PID {daemon_pid}) 已停止。"}
+                except Exception:
+                    pass
             self.bridge_process = None
             self.bridge_meta["running"] = False
             return {"stopped": False, "message": "转换桥当前未在控制台下运行。"}

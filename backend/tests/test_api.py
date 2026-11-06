@@ -213,3 +213,135 @@ def test_proposer_env_wires_shared_endpoint(monkeypatch):
     assert cl_env["ANTHROPIC_AUTH_TOKEN"] == "shared-key"
     assert cl_env["ANTHROPIC_MODEL"] == "improver-m"
     assert "CLAUDE_CODE_USE_VERTEX" not in cl_env
+
+
+def test_probe_upstream_responses_capability_404_triggers_bridge(monkeypatch):
+    import urllib.error
+
+    def fake_urlopen(req, timeout=8.0):
+        raise urllib.error.HTTPError(req.full_url, 404, "Not Found", {}, None)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    res = api.probe_upstream_responses_capability("https://api.openai-gateway.com/v1", "test-key")
+    assert res["wire_mode"] == "bridge"
+    assert res["status_code"] == 404
+    assert "Bridge managed" in res["message"]
+
+
+def test_probe_upstream_responses_capability_200_triggers_native(monkeypatch):
+    from unittest.mock import MagicMock
+
+    mock_resp = MagicMock()
+    mock_resp.status = 200
+    mock_resp.__enter__.return_value = mock_resp
+
+    def fake_urlopen(req, timeout=8.0):
+        return mock_resp
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    res = api.probe_upstream_responses_capability("https://native.openai.com/v1", "test-key")
+    assert res["wire_mode"] == "native"
+    assert res["status_code"] == 200
+    assert "natively supports" in res["message"]
+
+
+def test_codex_endpoint_bridge_mode_and_container(monkeypatch, tmp_path):
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_BASE_URL", "https://chat-only.upstream.com/v1")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_KEY", "shared-chat-key")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE", "bridge")
+
+    fake_dep = tmp_path / "dependencies" / "codex"
+    fake_dep.mkdir(parents=True, exist_ok=True)
+    bridge_json = fake_dep / "responses-bridge.json"
+    bridge_json.write_text(json.dumps({"port": 8765, "key": "bridge-secret-key"}), encoding="utf-8")
+    monkeypatch.setattr(api.config, "DEPENDENCIES", tmp_path / "dependencies")
+
+    # Host environment
+    ep_host = api.codex(for_container=False)
+    assert ep_host is not None
+    assert ep_host.base_url == "http://127.0.0.1:8765/v1"
+    assert ep_host.api_key == "bridge-secret-key"
+    assert ep_host.protocol == "openai-responses"
+
+    # Container environment
+    ep_container = api.codex(for_container=True)
+    assert ep_container is not None
+    assert ep_container.base_url == "http://host.docker.internal:8765/v1"
+    assert ep_container.api_key == "bridge-secret-key"
+
+
+def test_codex_endpoint_bridge_key_precedence_over_env_key(monkeypatch, tmp_path):
+    """When in bridge mode, the local bridge key MUST take precedence over upstream explicit CODEX_API_KEY."""
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_BASE_URL", "https://chat-only.upstream.com/v1")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_KEY", "upstream-shared-key")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_CODEX_API_KEY", "upstream-explicit-key")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE", "bridge")
+
+    fake_dep = tmp_path / "dependencies" / "codex"
+    fake_dep.mkdir(parents=True, exist_ok=True)
+    bridge_json = fake_dep / "responses-bridge.json"
+    bridge_json.write_text(json.dumps({"port": 8765, "key": "bridge-local-token-xyz"}), encoding="utf-8")
+    monkeypatch.setattr(api.config, "DEPENDENCIES", tmp_path / "dependencies")
+
+    ep = api.codex()
+    assert ep is not None
+    assert ep.base_url == "http://127.0.0.1:8765/v1"
+    # Crucial assertion: Must NOT be upstream-explicit-key, which would cause HTTP 401 on bridge!
+    assert ep.api_key == "bridge-local-token-xyz"
+
+
+def test_codex_endpoint_lazy_generates_bridge_json(monkeypatch, tmp_path):
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_BASE_URL", "https://chat.example.com/v1")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_KEY", "shared-key")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE", "bridge")
+    monkeypatch.setattr(api.config, "DEPENDENCIES", tmp_path / "dependencies")
+
+    bridge_json = tmp_path / "dependencies" / "codex" / "responses-bridge.json"
+    assert not bridge_json.is_file()
+
+    ep = api.codex()
+    assert ep is not None
+    assert ep.base_url == "http://127.0.0.1:8765/v1"
+    assert len(ep.api_key) > 10
+    assert bridge_json.is_file()
+
+
+def test_probe_upstream_responses_capability_401_triggers_native(monkeypatch):
+    import urllib.error
+
+    def fake_urlopen(req, timeout=8.0):
+        raise urllib.error.HTTPError(req.full_url, 401, "Unauthorized", {}, None)
+
+    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+    res = api.probe_upstream_responses_capability("https://api.openai.com/v1", "bad-key")
+    assert res["wire_mode"] == "native"
+    assert res["status_code"] == 401
+    assert "recognizes Responses endpoint" in res["message"]
+
+
+def test_configure_codex_and_codex_config_error_equivalence(monkeypatch, tmp_path):
+    from sec_agent_harness2 import install
+
+    fake_codex_home = tmp_path / "codex_home"
+    monkeypatch.setattr(install.config, "CODEX_HOME_DIR", fake_codex_home)
+    monkeypatch.setattr(api.config, "DEPENDENCIES", tmp_path / "dependencies")
+    monkeypatch.setattr(install.config, "DEPENDENCIES", tmp_path / "dependencies")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_BASE_URL", "https://chat-only.upstream.com/v1")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_KEY", "test-key")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE", "bridge")
+
+    # 1. configure_codex writes bridge config
+    install.configure_codex(home_dir=fake_codex_home)
+    assert (fake_codex_home / "config.toml").is_file()
+
+    # 2. codex_config_error returns None when URLs match exactly
+    err = install.codex_config_error(home_dir=fake_codex_home)
+    assert err is None
+
+    # 3. Localhost and 127.0.0.1 equivalence on same port should not trigger stale error
+    toml_content = (fake_codex_home / "config.toml").read_text(encoding="utf-8")
+    (fake_codex_home / "config.toml").write_text(
+        toml_content.replace("127.0.0.1:8765", "localhost:8765"), encoding="utf-8"
+    )
+    err2 = install.codex_config_error(home_dir=fake_codex_home)
+    assert err2 is None

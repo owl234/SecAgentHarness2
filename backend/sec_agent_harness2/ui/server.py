@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from .. import api, install
 from . import scanner
 from .runner import ExecutionManager
 
@@ -87,9 +88,14 @@ class ExecutorModelsRequest(BaseModel):
 class BridgeControlRequest(BaseModel):
     upstream: str | None = None
     api_key: str | None = None
-    host: str = Field(default="127.0.0.1")
+    host: str = Field(default="0.0.0.0")
     port: int = Field(default=0)
     auto_bind_codex: bool = Field(default=True)
+
+
+class BridgeReprobeRequest(BaseModel):
+    base_url: str | None = None
+    api_key: str | None = None
 
 
 class DemoLaunchRequest(BaseModel):
@@ -518,7 +524,7 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
             )
         try:
             meta = await runner.start_bridge(
-                upstream, api_key, host=req.host or "127.0.0.1", port=req.port
+                upstream, api_key, host=req.host or "0.0.0.0", port=req.port
             )
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"启动转换桥失败: {exc}")
@@ -545,6 +551,51 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
         return {
             "status": "stopped",
             "result": res,
+            "executors": scanner.get_executors_status(workspace_root, runner.get_bridge_info()),
+        }
+
+    @app.get("/api/executor/codex-bridge/status")
+    @app.get("/api/executors/bridge/status")
+    async def get_codex_bridge_status():
+        scanner.sync_config_from_env()
+        return scanner.get_bridge_status(workspace_root, runner.get_bridge_info())
+
+    @app.post("/api/executor/codex-bridge/reprobe")
+    @app.get("/api/executor/codex-bridge/reprobe")
+    @app.post("/api/executors/bridge/reprobe")
+    async def reprobe_codex_bridge(req: BridgeReprobeRequest | None = None):
+        scanner.sync_config_from_env()
+        from .. import install
+
+        base_url = ((req.base_url if req else None) or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", "")).strip()
+        api_key = ((req.api_key if req else None) or os.environ.get("SEC_AGENT_HARNESS2_API_KEY", "")).strip()
+        if not base_url:
+            raise HTTPException(status_code=400, detail="未配置基础地址 (Base URL)")
+
+        probe_res = api.probe_upstream_responses_capability(base_url, api_key)
+        bridge_json = workspace_root / "dependencies" / "codex" / "responses-bridge.json"
+        saved = scanner._safe_read_json(bridge_json) or {}
+        saved["wire_mode"] = probe_res.get("wire_mode", "bridge")
+        if "port" not in saved:
+            saved["port"] = 8765
+        if "key" not in saved:
+            import secrets
+
+            saved["key"] = secrets.token_urlsafe(24)
+        saved["host"] = saved.get("host", "0.0.0.0")
+        bridge_json.parent.mkdir(parents=True, exist_ok=True)
+        bridge_json.write_text(json.dumps(saved, indent=2) + "\n", encoding="utf-8")
+        bridge_json.chmod(0o600)
+
+        target_codex_home = workspace_root / "dependencies" / "codex" / "home"
+        try:
+            install.configure_codex(dry_run=False, home_dir=target_codex_home)
+        except Exception:
+            pass
+
+        return {
+            "probe": probe_res,
+            "bridge": scanner.get_bridge_status(workspace_root, runner.get_bridge_info()),
             "executors": scanner.get_executors_status(workspace_root, runner.get_bridge_info()),
         }
 

@@ -356,3 +356,31 @@ export async function stopResponsesBridge(): Promise<{
   }
   return res.json();
 }
+
+export async function reprobeCodexBridge(payload?: {
+  base_url?: string;
+  api_key?: string;
+}): Promise<{
+  probe: any;
+  bridge: any;
+  executors?: ExecutorStatusResponse;
+}> {
+  const res = await fetch(`${BASE}/executor/codex-bridge/reprobe`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload ? JSON.stringify(payload) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed' }));
+    throw new Error(err.detail || 'Failed to reprobe Responses endpoint');
+  }
+  return res.json();
+}
+
+export async function getCodexBridgeStatus(): Promise<any> {
+  const res = await fetch(`${BASE}/executor/codex-bridge/status`);
+  if (!res.ok) {
+    throw new Error('Failed to fetch Responses bridge status');
+  }
+  return res.json();
+}

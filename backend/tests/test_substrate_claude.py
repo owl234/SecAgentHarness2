@@ -284,8 +284,125 @@ def test_workbuddy_claude_job_yaml_mounts_and_env(tmp_path, monkeypatch):
     )
     assert "target: /opt/claude" in yml
     assert "host.docker.internal" in yml
+    assert "host.docker.internal:host-gateway" in yml
     assert "WB_HARNESS_WS" in yml
     assert "ANTHROPIC_BASE_URL" in yml
+
+
+def test_workbuddy_codex_job_yaml_structure(monkeypatch, tmp_path):
+    from sec_agent_harness2.benchmarks.workbuddy import SUBSETS, _job_yaml
+
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_BASE_URL", "https://chat-gateway.example.com/v1")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_KEY", "shared-key")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE", "bridge")
+
+    fake_dep = tmp_path / "dependencies" / "codex"
+    fake_dep.mkdir(parents=True, exist_ok=True)
+    bridge_json = fake_dep / "responses-bridge.json"
+    bridge_json.write_text(json.dumps({"port": 8765, "key": "codex-bridge-key"}), encoding="utf-8")
+    from sec_agent_harness2 import api
+    monkeypatch.setattr(api.config, "DEPENDENCIES", tmp_path / "dependencies")
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    yml = _job_yaml(
+        SUBSETS["code"],
+        "cx",
+        "wb-code-cx-agg1",
+        ["task-1"],
+        ws,
+        1,
+        tmp_path / "jobs",
+    )
+    assert "target: /opt/codex" in yml
+    assert "host.docker.internal:host-gateway" in yml
+    assert "http://host.docker.internal:8765/v1" in yml
+    assert "codex-bridge-key" in yml
+
+
+def test_codex_substrate_preflight_auto_probes_and_heals(monkeypatch, tmp_path):
+    from sec_agent_harness2.substrate.codex import CodexSubstrate
+    from sec_agent_harness2 import api, install
+
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_BASE_URL", "https://chat-gateway.upstream.com/v1")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_KEY", "upstream-secret-key")
+    monkeypatch.delenv("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE", raising=False)
+
+    fake_dep = tmp_path / "dependencies"
+    fake_codex_dist = fake_dep / "codex" / "dist"
+    fake_codex_dist.mkdir(parents=True, exist_ok=True)
+    fake_bin = fake_codex_dist / "codex"
+    fake_bin.write_text("#!/bin/sh\nexit 0\n")
+    fake_bin.chmod(0o755)
+
+    fake_codex_home = fake_dep / "codex" / "home"
+
+    monkeypatch.setattr(api.config, "DEPENDENCIES", fake_dep)
+    monkeypatch.setattr(install.config, "DEPENDENCIES", fake_dep)
+    monkeypatch.setattr(install.config, "CODEX_DIST", fake_codex_dist)
+    monkeypatch.setattr(install.config, "CODEX_HOME_DIR", fake_codex_home)
+
+    from sec_agent_harness2.substrate import codex as codex_mod
+    monkeypatch.setattr(codex_mod.config, "DEPENDENCIES", fake_dep)
+    monkeypatch.setattr(codex_mod.config, "CODEX_DIST", fake_codex_dist)
+
+    calls = {"probed": 0, "ensured": 0}
+
+    def fake_probe(url, key, timeout=8.0):
+        calls["probed"] += 1
+        return {"wire_mode": "bridge", "status_code": 404, "message": "Bridge managed"}
+
+    monkeypatch.setattr(api, "probe_upstream_responses_capability", fake_probe)
+
+    from sec_agent_harness2.cli import responses_bridge
+    def fake_ensure(*args, **kwargs):
+        calls["ensured"] += 1
+        return {"port": 8765, "key": "bridge-token-auto", "wire_mode": "bridge"}
+
+    monkeypatch.setattr(responses_bridge, "ensure_bridge_running", fake_ensure)
+
+    # Mock socket.create_connection so it doesn't fail on mock port
+    import socket
+    from unittest.mock import MagicMock
+    monkeypatch.setattr(socket, "create_connection", lambda *args, **kwargs: MagicMock())
+
+    sub = CodexSubstrate()
+    sub.preflight()
+
+    # Verify: Probe was invoked because wire_mode was unset
+    assert calls["probed"] == 1
+    # Verify: Bridge was ensured
+    assert calls["ensured"] == 1
+    # Verify: config.toml was auto-healed and created
+    assert (fake_codex_home / "config.toml").is_file()
+    assert install.codex_config_error(home_dir=fake_codex_home) is None
+
+
+def test_jobbench_codex_exec_env_receives_bridge_key(monkeypatch, tmp_path):
+    from sec_agent_harness2.substrate.codex import CodexSubstrate
+    from sec_agent_harness2 import api
+
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_BASE_URL", "https://chat-gateway.upstream.com/v1")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_API_KEY", "upstream-secret-key")
+    monkeypatch.setenv("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE", "bridge")
+
+    fake_dep = tmp_path / "dependencies"
+    fake_bridge = fake_dep / "codex" / "responses-bridge.json"
+    fake_bridge.parent.mkdir(parents=True, exist_ok=True)
+    fake_bridge.write_text(json.dumps({"port": 8765, "key": "bridge-token-expected"}), encoding="utf-8")
+
+    monkeypatch.setattr(api.config, "DEPENDENCIES", fake_dep)
+
+    from sec_agent_harness2.substrate import codex as codex_mod
+    monkeypatch.setattr(codex_mod.config, "DEPENDENCIES", fake_dep)
+
+    sub = CodexSubstrate()
+    # Simulate base_env that already has old VERTEX_PROXY_KEY from .env
+    base_env = {"VERTEX_PROXY_KEY": "upstream-secret-key", "PATH": "/usr/bin"}
+    env = sub.exec_env(base_env, codex_home=tmp_path / "home")
+
+    # Crucial assertion: Must receive the bridge token, NOT the upstream secret!
+    assert env["VERTEX_PROXY_KEY"] == "bridge-token-expected"
 
 
 def test_claude_prompt_surface_and_subagent_rules(tmp_path):

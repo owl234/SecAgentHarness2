@@ -296,9 +296,13 @@ export interface BridgeStatus {
   port?: number;
   host: string;
   upstream: string;
+  wire_mode?: 'bridge' | 'native' | 'unknown';
   local_url: string;
   container_url: string;
+  auth_enabled?: boolean;
   key_configured: boolean;
+  local_key?: string;
+  local_key_masked?: string;
   managed: boolean;
 }
 

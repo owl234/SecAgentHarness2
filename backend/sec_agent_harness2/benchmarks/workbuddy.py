@@ -45,11 +45,12 @@ from ..substrate.base import Install, RunRequest
 from ..substrate.claude import CLAUDE_SURFACE, ClaudeSubstrate
 from ..substrate.codex import CODEX_SURFACE, CodexSubstrate
 from ..substrate.opencode import OPENCODE_SURFACE, OpencodeSubstrate
+from ..substrate.pi import PI_SURFACE, PiSubstrate
 from . import wb_render as RENDER
 from .tasks import discover, select
 
 SCOREABLE = frozenset({"code", "web", "office"})
-SUBSTRATES = ("oc", "cx", "claude")
+SUBSTRATES = ("oc", "cx", "claude", "pi")
 
 _BASE_LOCK = threading.Lock()
 _BASE_DONE: set[Path] = set()
@@ -67,6 +68,10 @@ def _harness_cx() -> str:
 
 def _harness_claude() -> str:
     return f"claude-harness/{config.WB_CLAUDE_HARNESS_VER}"
+
+
+def _harness_pi() -> str:
+    return f"pi-harness/{config.WB_PI_HARNESS_VER}"
 
 
 @dataclass(frozen=True)
@@ -503,9 +508,13 @@ def _codex_key() -> str:
 
 def _codex_container_url() -> str:
     """The endpoint as the container sees it, falling back to the host-visible one."""
-    endpoint = api.codex()
-    url = endpoint.base_url if endpoint is not None else ""
-    return config.CODEX_CONTAINER_URL or url
+    explicit = os.environ.get("SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL")
+    if explicit:
+        return explicit
+    endpoint = api.codex(for_container=True)
+    if endpoint is not None and endpoint.base_url:
+        return endpoint.base_url
+    return config.CODEX_CONTAINER_URL or ""
 
 
 def _job_yaml(
@@ -553,10 +562,49 @@ def _job_yaml(
             "extra_allowed_hosts:\n"
             "  - host.docker.internal\n"
             "environment_override:\n"
+            "  extra_hosts:\n"
+            "    - host.docker.internal:host-gateway\n"
             "  mounts:\n"
             "    - type: bind\n"
             f"      source: {config.CLAUDE_DIST}\n"
             "      target: /opt/claude\n"
+            "      read_only: true\n"
+            f"{env_block}"
+            f"{hp_block}"
+        )
+    elif substrate == "pi":
+        harness = _harness_pi()
+        hp = {"PI_MODEL": config.SOLVER_MODEL_PI}
+        if ws is not None:
+            hp["WB_HARNESS_WS"] = str(ws.resolve())
+        hp_lines = "\n".join(f"  {key}: {json.dumps(val)}" for key, val in sorted(hp.items()))
+        hp_block = f"harness_params_override:\n{hp_lines}\n"
+        pi_env_vars: dict[str, str] = {
+            "PI_OFFLINE": "1",
+            "PI_SKIP_VERSION_CHECK": "1",
+            "PI_TELEMETRY": "0",
+        }
+        ep = api.pi(for_container=True)
+        if ep is not None:
+            pi_env_vars["PI_BASE_URL"] = ep.base_url
+            pi_env_vars["PI_API_KEY"] = ep.api_key
+            pi_env_vars["PI_PROTOCOL"] = ep.protocol
+            if ep.model:
+                pi_env_vars["PI_MODEL"] = ep.model
+        env_lines = "\n".join(
+            f"  {key}: {json.dumps(val)}" for key, val in sorted(pi_env_vars.items())
+        )
+        env_block = f"env_override:\n{env_lines}\n"
+        extra = (
+            "extra_allowed_hosts:\n"
+            "  - host.docker.internal\n"
+            "environment_override:\n"
+            "  extra_hosts:\n"
+            "    - host.docker.internal:host-gateway\n"
+            "  mounts:\n"
+            "    - type: bind\n"
+            f"      source: {config.PI_DIST}\n"
+            "      target: /opt/pi\n"
             "      read_only: true\n"
             f"{env_block}"
             f"{hp_block}"
@@ -574,6 +622,8 @@ def _job_yaml(
             "extra_allowed_hosts:\n"
             "  - host.docker.internal\n"
             "environment_override:\n"
+            "  extra_hosts:\n"
+            "    - host.docker.internal:host-gateway\n"
             "  mounts:\n"
             "    - type: bind\n"
             f"      source: {config.CODEX_DIST}\n"
@@ -704,11 +754,13 @@ def run_batch(
 def spec_for(subset: str, substrate: str) -> BenchSpec:
     s = SUBSETS[subset]
     channel = resolve_channel_model(None, None, effort="high")
-    install_mode = (
-        "home_dir_jinja"
-        if substrate == "oc"
-        else ("codex_root" if substrate == "cx" else "claude_root")
-    )
+    install_mode_map = {
+        "oc": "home_dir_jinja",
+        "cx": "codex_root",
+        "claude": "claude_root",
+        "pi": "pi_root",
+    }
+    install_mode = install_mode_map[substrate]
     return BenchSpec(
         name=f"wb-{subset}",
         runs_root=config.RUNS / "wb" / subset,
@@ -717,7 +769,7 @@ def spec_for(subset: str, substrate: str) -> BenchSpec:
         channels={"proposer": channel, "selector": channel},
         domain_word="category",
         leak_globs=s.leak_globs,
-        allow_subagents=(substrate in ("oc", "claude")),
+        allow_subagents=(substrate in ("oc", "claude", "pi")),
         obs_trunc=50_000,
         proposer_deliverables=("names" if subset == "code" else "contents"),
         state_deliverable=True,
@@ -744,6 +796,8 @@ class WbAdapter:
             self.substrate = CodexSubstrate(launcher=self._launch)
         elif substrate == "claude":
             self.substrate = ClaudeSubstrate(launcher=self._launch)
+        elif substrate == "pi":
+            self.substrate = PiSubstrate(launcher=self._launch)
 
     def tasks(self, split: str = "all") -> list[str]:
         return select(
@@ -802,6 +856,12 @@ class WbAdapter:
                 config.SOLVER_MODEL_CLAUDE,
                 "claude_ver",
                 config.WB_CLAUDE_HARNESS_VER,
+            )
+        elif name == "pi":
+            solver, ver_key, ver = (
+                config.SOLVER_MODEL_PI,
+                "pi_ver",
+                config.WB_PI_HARNESS_VER,
             )
         else:
             solver, ver_key, ver = config.SOLVER_MODEL_CX, "cx_ver", config.WB_CX_HARNESS_VER
@@ -931,6 +991,8 @@ class WbAdapter:
             stream = "oc-output.txt"
         elif self.substrate.name == "claude":
             stream = "claude-output.jsonl"
+        elif self.substrate.name == "pi":
+            stream = "pi-output.jsonl"
         else:
             stream = "codex-output.jsonl"
         return Path(run_dir) / "agent" / stream
@@ -992,6 +1054,19 @@ class WbAdapter:
                         stubs=True,
                         allow_subagents=self.spec.allow_subagents,
                     )
+                elif self.substrate.name == "pi":
+                    HT.write_tree(
+                        PI_SURFACE,
+                        {
+                            "AGENTS.md": (
+                                "Follow the task instructions and complete the requested work in the "
+                                "workspace, writing every deliverable where the instructions say."
+                            )
+                        },
+                        d,
+                        stubs=True,
+                        allow_subagents=self.spec.allow_subagents,
+                    )
                 else:
                     HT.write_tree(
                         CODEX_SURFACE,
@@ -1035,6 +1110,8 @@ class WbAdapter:
             if self.substrate.name == "oc"
             else [_harness_claude()]
             if self.substrate.name == "claude"
+            else [_harness_pi()]
+            if self.substrate.name == "pi"
             else [_harness_cx()]
         )
         for slug in slugs:

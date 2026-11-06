@@ -1,18 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
   Terminal,
   Key,
-  Play,
-  Square,
-  Activity,
   FileCode2,
+  ChevronDown,
+  ChevronRight,
+  RefreshCw,
+  ShieldCheck,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { BridgeStatus, ExecutorItem, UnifiedApiConfig } from '../../types';
 import { DrawerTabId, ExecutorFormValues } from './executorTypes';
 import { useLang } from '../../i18n/LangContext';
+import { reprobeCodexBridge } from '../../api';
 
 interface SubstrateConfigTabProps {
   selectedTab: Exclude<DrawerTabId, 'unified'>;
@@ -26,6 +30,7 @@ interface SubstrateConfigTabProps {
   bridgeBusy: boolean;
   onStartBridge: () => void;
   onStopBridge: () => void;
+  onReprobeBridge?: () => void;
 }
 
 export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
@@ -40,8 +45,27 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
   bridgeBusy,
   onStartBridge,
   onStopBridge,
+  onReprobeBridge,
 }) => {
   const { tx } = useLang();
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [isReprobing, setIsReprobing] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
+
+  const handleReprobe = async () => {
+    if (onReprobeBridge) {
+      onReprobeBridge();
+      return;
+    }
+    setIsReprobing(true);
+    try {
+      await reprobeCodexBridge();
+    } catch (err) {
+      console.error('Reprobe error:', err);
+    } finally {
+      setIsReprobing(false);
+    }
+  };
 
   return (
     <>
@@ -387,95 +411,123 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
       {/* ------------------------------------------------------- */}
       {selectedTab === 'cx' && (
         <div className="space-y-4">
+          {/* Adaptive Wire Mode & Auto-Bridge Capsule */}
           <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-emerald-500" />
-                  <span className="text-xs font-bold text-slate-900 dark:text-white">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                {bridge?.wire_mode === 'native' ? (
+                  <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                    {tx('直连上游原生 Responses 端点', 'Direct Native Responses Upstream')}
+                  </span>
+                ) : (
+                  <span className="text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-emerald-500" />
                     {tx(
-                      '内置 Responses 协议转换桥 (sec-agent-harness2-responses-bridge)',
-                      'Built-in Responses Wire Bridge (sec-agent-harness2-responses-bridge)'
+                      `已自动托管转换桥 (:${bridge?.port || 8765} · 安全鉴权激活)`,
+                      `Auto-managed Bridge (:${bridge?.port || 8765} · Bearer Auth Active)`
                     )}
                   </span>
-                  <span
-                    className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                      bridge?.running
-                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                        : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
-                    }`}
-                  >
-                    {bridge?.running
-                      ? tx(`运行中 (:${bridge.port})`, `Running (:${bridge.port})`)
-                      : tx('未运行', 'Stopped')}
-                  </span>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  {tx(
-                    'Codex 0.144.6 仅支持 wire_api = "responses"。若上游网关仅提供 OpenAI Chat Completions，可在此一键启动本地转换桥并自动写入 dependencies/codex/home/config.toml。',
-                    'Codex 0.144.6 requires wire_api = "responses". If your upstream only serves Chat Completions, start the local bridge here and auto-sync dependencies/codex/home/config.toml.'
+                )}
+              </div>
+
+              <button
+                type="button"
+                disabled={bridgeBusy || isReprobing}
+                onClick={handleReprobe}
+                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isReprobing ? 'animate-spin text-blue-500' : ''}`} />
+                <span>{isReprobing ? tx('正在探测...', 'Probing...') : tx('重新探测协议', 'Re-probe Wire API')}</span>
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+              {bridge?.wire_mode === 'native'
+                ? tx(
+                    '上游端点原生支持 /v1/responses，Codex 发起原生直连会话，零转译损耗并完整保留模型思维链。',
+                    'Upstream natively supports /v1/responses. Codex connects directly with zero translation overhead and full reasoning support.'
+                  )
+                : tx(
+                    `Codex 0.144.6 严格要求 wire_api = "responses"。系统已自动在后台常驻托管双向协议桥（基线端口 :${bridge?.port || 8765}），入站流量通过本地生成的 Bearer Key 强鉴权保护，零感知支持宿主机与 WorkBuddy Docker 容器穿透。`,
+                    `Codex 0.144.6 requires wire_api = "responses". The system transparently manages a local bridge on :${bridge?.port || 8765} with inbound Bearer Token security, supporting host and Docker container rollouts.`
                   )}
-                </p>
-              </div>
+            </p>
+
+            {/* Collapsible Accordion: Advanced Protocol Settings & Diagnostics */}
+            <div className="pt-1 border-t border-slate-200 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
+                className="text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1.5 cursor-pointer select-none py-1"
+              >
+                {isAdvancedOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-500" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500" />}
+                <span>{tx('折叠式高级协议配置与极客调试', 'Advanced Protocol Settings & Diagnostics')}</span>
+              </button>
+
+              {isAdvancedOpen && (
+                <div className="mt-2.5 p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-600 dark:text-slate-300 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">{tx('本地端点:', 'Local URL:')}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{bridge?.local_url || `http://127.0.0.1:${bridge?.port || 8765}/v1`}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">{tx('容器内穿透端点:', 'Container URL:')}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{bridge?.container_url || `http://host.docker.internal:${bridge?.port || 8765}/v1`}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">{tx('上游端点:', 'Upstream Target:')}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200 truncate max-w-[260px]">{bridge?.upstream || unifiedCfg?.base_url || '-'}</span>
+                  </div>
+                  {bridge?.local_key && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">{tx('本地鉴权 Token:', 'Inbound Bearer Token:')}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">{bridge.local_key_masked || '••••••••'}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (bridge.local_key) {
+                              navigator.clipboard.writeText(bridge.local_key);
+                              setCopiedKey(true);
+                              setTimeout(() => setCopiedKey(false), 2000);
+                            }
+                          }}
+                          className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded cursor-pointer text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                          title={tx('复制本地鉴权密钥', 'Copy Local Key')}
+                        >
+                          {copiedKey ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2">
+                    {bridge?.running && (
+                      <button
+                        type="button"
+                        disabled={bridgeBusy}
+                        onClick={onStopBridge}
+                        className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-[11px] font-semibold cursor-pointer"
+                      >
+                        {tx('停止转换桥', 'Stop Bridge')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={bridgeBusy}
+                      onClick={onStartBridge}
+                      className="px-2.5 py-1 rounded-lg bg-slate-200 dark:bg-slate-800 hover:bg-slate-300 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 text-[11px] font-semibold cursor-pointer"
+                    >
+                      {tx('重启转换桥', 'Restart Bridge')}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-500 font-medium">{tx('监听地址:', 'Bind Host:')}</span>
-                <select
-                  value={form.bridgeHost}
-                  onChange={(e) =>
-                    updateForm({ bridgeHost: e.target.value as '127.0.0.1' | '0.0.0.0' })
-                  }
-                  className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs font-mono text-slate-900 dark:text-white"
-                >
-                  <option value="127.0.0.1">
-                    {tx('127.0.0.1 (宿主机 JB / LAB)', '127.0.0.1 (Host JB / LAB)')}
-                  </option>
-                  <option value="0.0.0.0">
-                    {tx('0.0.0.0 (含 WorkBuddy Docker 容器)', '0.0.0.0 (Includes WorkBuddy Docker)')}
-                  </option>
-                </select>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {bridge?.running ? (
-                  <button
-                    type="button"
-                    disabled={bridgeBusy}
-                    onClick={onStopBridge}
-                    className="px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Square className="w-3.5 h-3.5 fill-current" />
-                    <span>{tx('停止转换桥', 'Stop Bridge')}</span>
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  disabled={bridgeBusy}
-                  onClick={onStartBridge}
-                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>
-                    {bridgeBusy
-                      ? tx('正在处理...', 'Working...')
-                      : bridge?.running
-                      ? tx('重启转换桥并同步', 'Restart & Sync Bridge')
-                      : tx('一键启动转换桥并绑定 Codex', 'Start Bridge & Bind Codex')}
-                  </span>
-                </button>
-              </div>
-            </div>
-
-            {bridge?.running && (
-              <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-600 dark:text-slate-300 space-y-1">
-                <div>Local URL: {bridge.local_url}</div>
-                <div>Upstream: {bridge.upstream}</div>
-              </div>
-            )}
           </div>
 
+          {/* Config TOML status */}
           <div className="bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
             <div className="min-w-0 pr-2">
               <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
@@ -508,6 +560,7 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
             </span>
           </div>
 
+          {/* Codex Model ID */}
           <div>
             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
               {tx(
@@ -538,64 +591,6 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
                 </button>
               ))}
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                {tx('Responses 端点 (SEC_AGENT_HARNESS2_CODEX_BASE_URL)', 'Responses Endpoint (SEC_AGENT_HARNESS2_CODEX_BASE_URL)')}
-              </label>
-              <input
-                type="text"
-                value={form.cxBaseUrl}
-                onChange={(e) => updateForm({ cxBaseUrl: e.target.value })}
-                placeholder={
-                  unifiedCfg?.base_url
-                    ? tx(
-                        `留空继承统一 API (${unifiedCfg.base_url})`,
-                        `Blank inherits Unified API (${unifiedCfg.base_url})`
-                      )
-                    : 'http://127.0.0.1:PORT/v1'
-                }
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                {tx(
-                  '容器内端点 (SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL · 可选)',
-                  'Container Endpoint (SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL)'
-                )}
-              </label>
-              <input
-                type="text"
-                value={form.cxContainerUrl}
-                onChange={(e) => updateForm({ cxContainerUrl: e.target.value })}
-                placeholder="http://host.docker.internal:PORT/v1"
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              {tx('Codex 鉴权密钥 (SEC_AGENT_HARNESS2_CODEX_API_KEY)', 'Codex API Key (SEC_AGENT_HARNESS2_CODEX_API_KEY)')}
-            </label>
-            <input
-              type={showApiKey ? 'text' : 'password'}
-              value={form.cxApiKey}
-              onChange={(e) => updateForm({ cxApiKey: e.target.value })}
-              placeholder={
-                activeExecutor.api_key_configured
-                  ? tx(
-                      `已配置 (${activeExecutor.api_key_masked || '继承自统一API'}) · 留空保持不变`,
-                      `Configured (${activeExecutor.api_key_masked || 'Inherited'}) · Leave blank to keep`
-                    )
-                  : tx('留空默认继承 SEC_AGENT_HARNESS2_API_KEY', 'Blank inherits SEC_AGENT_HARNESS2_API_KEY')
-              }
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-            />
           </div>
         </div>
       )}

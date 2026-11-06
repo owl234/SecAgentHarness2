@@ -300,3 +300,109 @@ def test_main_cli_dispatch_responses_bridge():
     with pytest.raises(SystemExit) as exc:
         cli_main.main(["responses_bridge", "--help"])
     assert exc.value.code == 0
+
+
+def test_inbound_bearer_auth_and_healthz():
+    """Verify that inbound Bearer Token is enforced on endpoints while /healthz remains public."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "model": "m",
+                "choices": [{"message": {"role": "assistant", "content": "authenticated response"}}],
+            },
+        )
+
+    async_client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    app = create_app(
+        "https://upstream.example.com/v1",
+        "upstream-key",
+        local_key="test-bridge-token-12345",
+        client=async_client,
+    )
+    client = TestClient(app)
+
+    # 1. /healthz is open without authentication
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.json()["status"] == "ok"
+
+    # 2. /v1/responses without auth token -> 401
+    r = client.post("/v1/responses", json={"model": "m", "input": "hi"})
+    assert r.status_code == 401
+    assert "Unauthorized" in r.json()["error"]
+
+    # 3. /v1/responses with wrong Bearer token -> 401
+    r = client.post(
+        "/v1/responses",
+        json={"model": "m", "input": "hi"},
+        headers={"Authorization": "Bearer wrong-token"},
+    )
+    assert r.status_code == 401
+    assert "Unauthorized" in r.json()["error"]
+
+    # 4. /v1/responses with correct Bearer token -> 200
+    r = client.post(
+        "/v1/responses",
+        json={"model": "m", "input": "hi"},
+        headers={"Authorization": "Bearer test-bridge-token-12345"},
+    )
+    assert r.status_code == 200
+    assert r.json()["output"][0]["content"][0]["text"] == "authenticated response"
+
+    # 5. /v1/models without auth token -> 401
+    r = client.get("/v1/models")
+    assert r.status_code == 401
+
+
+def test_ensure_bridge_running_concurrency_and_daemon(monkeypatch, tmp_path):
+    """Verify ensure_bridge_running starts exactly one daemon process and reuses it under concurrent load."""
+    import concurrent.futures
+    from unittest.mock import MagicMock
+    from sec_agent_harness2.cli import responses_bridge
+
+    fake_dep = tmp_path / "dependencies" / "codex"
+    fake_dep.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(responses_bridge.config, "DEPENDENCIES", tmp_path / "dependencies")
+
+    calls = {"popen": 0, "healthy": 0}
+
+    def fake_healthy(host, port, timeout=1.0):
+        calls["healthy"] += 1
+        # False on first check, True once popen has been called
+        return calls["popen"] > 0
+
+    monkeypatch.setattr(responses_bridge, "is_bridge_healthy", fake_healthy)
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 99999
+    mock_proc.poll.return_value = None
+
+    def fake_popen(*args, **kwargs):
+        calls["popen"] += 1
+        return mock_proc
+
+    import subprocess
+
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+
+    # Concurrently invoke ensure_bridge_running from 4 threads
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
+        futures = [
+            ex.submit(
+                responses_bridge.ensure_bridge_running,
+                upstream="https://upstream.example.com/v1",
+                api_key="mock-key",
+                port=8765,
+            )
+            for _ in range(4)
+        ]
+        results = [f.result() for f in futures]
+
+    # Verify: Popen called exactly once despite 4 concurrent callers
+    assert calls["popen"] == 1
+    # Verify: All 4 callers received matching port and local key
+    assert len(results) == 4
+    for res in results:
+        assert res["port"] == 8765
+        assert res["key"] == results[0]["key"]

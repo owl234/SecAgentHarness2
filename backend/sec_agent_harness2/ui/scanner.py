@@ -1966,6 +1966,29 @@ def persist_env_updates(
         synced_files.append(".env")
 
     # Sync derived files when operating on the repository workspace:
+    # 0. Probe and persist Codex wire mode if Unified API was updated without explicit WIRE_MODE override
+    if ("SEC_AGENT_HARNESS2_API_BASE_URL" in applied or "SEC_AGENT_HARNESS2_API_KEY" in applied or "SEC_AGENT_HARNESS2_CODEX_BASE_URL" in applied) and not os.environ.get("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE"):
+        up_url = (os.environ.get("SEC_AGENT_HARNESS2_CODEX_BASE_URL") or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", "")).strip()
+        up_key = (os.environ.get("SEC_AGENT_HARNESS2_CODEX_API_KEY") or os.environ.get("SEC_AGENT_HARNESS2_API_KEY", "")).strip()
+        if up_url and up_key:
+            try:
+                probe_res = api.probe_upstream_responses_capability(up_url, up_key, timeout=3.0)
+                bridge_json = workspace_root / "dependencies" / "codex" / "responses-bridge.json"
+                cur = _safe_read_json(bridge_json) or {}
+                cur["wire_mode"] = probe_res.get("wire_mode", "bridge")
+                if "port" not in cur:
+                    cur["port"] = 8765
+                if "key" not in cur:
+                    import secrets
+
+                    cur["key"] = secrets.token_urlsafe(24)
+                cur["host"] = cur.get("host", "0.0.0.0")
+                bridge_json.parent.mkdir(parents=True, exist_ok=True)
+                bridge_json.write_text(json.dumps(cur, indent=2) + "\n", encoding="utf-8")
+                bridge_json.chmod(0o600)
+            except Exception:
+                pass
+
     # 1. Codex home/config.toml when Codex endpoint is present
     ep_cx = api.codex()
     if ep_cx is not None and ep_cx.base_url:
@@ -2015,9 +2038,10 @@ def get_bridge_status(workspace_root: Path, managed_info: dict[str, Any] | None 
 
     bridge_json = workspace_root / "dependencies" / "codex" / "responses-bridge.json"
     saved = _safe_read_json(bridge_json) or {}
-    port = (managed_info or {}).get("port") or saved.get("port")
-    host = (managed_info or {}).get("host") or "127.0.0.1"
+    port = (managed_info or {}).get("port") or saved.get("port") or 8765
+    host = (managed_info or {}).get("host") or saved.get("host") or "0.0.0.0"
     key = saved.get("key") or ""
+    wire_mode = os.environ.get("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE") or saved.get("wire_mode", "bridge")
     upstream = (managed_info or {}).get("upstream") or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", "")
     running = False
 
@@ -2037,14 +2061,19 @@ def get_bridge_status(workspace_root: Path, managed_info: dict[str, Any] | None 
 
     local_url = f"http://127.0.0.1:{port}/v1" if port else ""
     container_url = f"http://host.docker.internal:{port}/v1" if port else ""
+    key_masked = (key[:4] + "..." + key[-4:]) if len(key) >= 8 else ("***" if key else "")
     return {
         "running": running,
         "port": port,
         "host": host,
         "upstream": upstream,
+        "wire_mode": wire_mode,
         "local_url": local_url,
         "container_url": container_url,
+        "auth_enabled": True,
         "key_configured": bool(key),
+        "local_key": key,
+        "local_key_masked": key_masked,
         "managed": bool(managed_info and managed_info.get("running")),
     }
 

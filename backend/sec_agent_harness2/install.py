@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import shutil
 import stat
@@ -37,11 +38,15 @@ PATCHES = {
 RUNNERS = (
     "jb_runner/run_benchmark_codex_cli_adapt.sh",
     "jb_runner/run_benchmark_claude_cli_adapt.sh",
+    "jb_runner/run_benchmark_pi_cli_adapt.sh",
     "lab_runner/opencode/run_opencode.py",
     "lab_runner/adapt_runs_claude/run_claude_lab.py",
+    "lab_runner/adapt_runs_pi/run_pi_lab.py",
     "wb_runner/agents/oc_agent.py",
     "wb_runner/agents/claude_agent.py",
     "wb_runner/agents/claude_harness_agent.py",
+    "wb_runner/agents/pi_agent.py",
+    "wb_runner/agents/pi_harness_agent.py",
 )
 
 
@@ -136,6 +141,7 @@ def overlays(name: str, *, dry_run=False):
             (assets / "lab_runner" / "tts_lab", repo / "external" / "tts_lab"),
             (assets / "lab_runner" / "adapt_runs_cx", repo / "external" / "adapt_runs_cx"),
             (assets / "lab_runner" / "adapt_runs_claude", repo / "external" / "adapt_runs_claude"),
+            (assets / "lab_runner" / "adapt_runs_pi", repo / "external" / "adapt_runs_pi"),
         ]
     if name == "workbuddy-bench":
         pairs = [
@@ -410,6 +416,41 @@ CODEX_PROVIDER = "sec_agent_harness2"
 
 
 def configure_codex(*, dry_run=False, home_dir: Path | None = None):
+    # Ensure bridge config and wire_mode are resolved if needed
+    wire_mode = os.environ.get("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE", "")
+    bridge_file = config.DEPENDENCIES / "codex" / "responses-bridge.json"
+    if not wire_mode and bridge_file.is_file():
+        try:
+            bridge_data = json.loads(bridge_file.read_text(encoding="utf-8"))
+            wire_mode = bridge_data.get("wire_mode", "")
+        except Exception:
+            pass
+
+    if not wire_mode:
+        up_url = (
+            os.environ.get("SEC_AGENT_HARNESS2_CODEX_BASE_URL")
+            or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL")
+            or config.API_BASE_URL
+        )
+        up_key = (
+            os.environ.get("SEC_AGENT_HARNESS2_CODEX_API_KEY")
+            or os.environ.get("SEC_AGENT_HARNESS2_API_KEY")
+            or config.API_KEY
+        )
+        if up_url:
+            try:
+                probe_res = api.probe_upstream_responses_capability(up_url, up_key)
+                wire_mode = probe_res.get("wire_mode", "bridge")
+            except Exception:
+                wire_mode = "bridge"
+            bridge_file.parent.mkdir(parents=True, exist_ok=True)
+            from .cli.responses_bridge import _endpoint
+
+            ep_dict = _endpoint(bridge_file)
+            ep_dict["wire_mode"] = wire_mode
+            bridge_file.write_text(json.dumps(ep_dict, indent=2) + "\n", encoding="utf-8")
+            bridge_file.chmod(0o600)
+
     endpoint = api.codex()
     if endpoint is None or not endpoint.base_url:
         raise config.ConfigError(
@@ -431,15 +472,36 @@ def configure_codex(*, dry_run=False, home_dir: Path | None = None):
             write_codex_launcher()
 
 
+def _is_same_bridge_endpoint(found: str | None, want: str | None) -> bool:
+    if found == want:
+        return True
+    if not found or not want:
+        return False
+    from urllib.parse import urlparse
+
+    try:
+        p_found = urlparse(found.rstrip("/"))
+        p_want = urlparse(want.rstrip("/"))
+        if (
+            p_found.scheme == p_want.scheme
+            and (p_found.port or 80) == (p_want.port or 80)
+            and p_found.path.rstrip("/") == p_want.path.rstrip("/")
+            and p_found.hostname in ("127.0.0.1", "0.0.0.0", "localhost")
+            and p_want.hostname in ("127.0.0.1", "0.0.0.0", "localhost")
+        ):
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def codex_config_error(*, home_dir: Path | None = None) -> str | None:
     """Why `CODEX_HOME/config.toml` no longer matches the live Codex configuration.
 
     `configure_codex` bakes the endpoint and the model into a file that the Codex CLI
-    reads at rollout time, and setup is the only thing that writes it. Nothing else
-    re-reads `SEC_AGENT_HARNESS2_CODEX_BASE_URL` / `SEC_AGENT_HARNESS2_CODEX_MODEL` afterwards, so callers
-    verify the derived file here before a rollout is paid for -- otherwise a changed
-    endpoint is silently ignored and the run contacts the stale one. Returns None when
-    the file agrees with the environment, else a message naming the remedy.
+    reads at rollout time. In bridge mode, the deterministic bridge endpoint (:8765)
+    remains stable across upstream model switches. Returns None when the file agrees
+    with the environment, else a message naming the remedy.
     """
     target_home = home_dir or config.CODEX_HOME_DIR
     path = target_home / "config.toml"
@@ -456,14 +518,15 @@ def codex_config_error(*, home_dir: Path | None = None) -> str | None:
     block = (data.get("model_providers") or {}).get(provider) or {}
     endpoint = api.codex()
     want_url = endpoint.base_url if endpoint is not None else config.CODEX_BASE_URL
-    stale = [
-        f"{key} is {found!r}, configuration says {want!r}"
-        for key, want, found in (
-            ("base_url", want_url, block.get("base_url")),
-            ("model", config.SOLVER_MODEL_CX, data.get("model")),
-        )
-        if found != want
-    ]
+    found_url = block.get("base_url")
+
+    stale = []
+    if not _is_same_bridge_endpoint(found_url, want_url):
+        stale.append(f"base_url is {found_url!r}, configuration says {want_url!r}")
+    found_model = data.get("model")
+    if found_model != config.SOLVER_MODEL_CX:
+        stale.append(f"model is {found_model!r}, configuration says {config.SOLVER_MODEL_CX!r}")
+
     if stale:
         return f"{path} is stale ({'; '.join(stale)}); {CODEX_CONFIG_REMEDY}"
     return None
@@ -567,6 +630,49 @@ def claude(*, dry_run=False):
     launcher.write_text(launcher_content, encoding="utf-8")
     launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     print(f"Claude Code (clawgod) installed successfully at {launcher}", flush=True)
+
+
+def configure_pi(*, dry_run=False, agent_dir: Path | None = None):
+    """Write `models.json` into `dependencies/pi/agent` when a Pi endpoint is configured."""
+    target = Path(agent_dir) if agent_dir is not None else config.PI_AGENT_DIR
+    endpoint = api.pi()
+    if endpoint is None:
+        return
+    if dry_run:
+        print(f"Write Pi models.json in {target / 'models.json'}", flush=True)
+        return
+    extra = [config.SOLVER_MODEL_PI] if config.SOLVER_MODEL_PI else []
+    api.pi_env(endpoint, {}, agent_dir=target, extra_models=extra)
+
+
+def pi(*, dry_run=False):
+    """Install `@mariozechner/pi-coding-agent` pinned at `config.PI_VERSION` under `dependencies/pi`."""
+    root = config.PI_DIST
+    pkg = f"@mariozechner/pi-coding-agent@{config.PI_VERSION}"
+    if dry_run:
+        print(f"Install Pi Coding Agent ({pkg}) runtime in {root}", flush=True)
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    run(["npm", "install", "--prefix", root, pkg], dry_run=dry_run)
+
+    bin_dir = root / "bin"
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    launcher = bin_dir / "pi"
+    launcher_content = (
+        "#!/bin/bash\n"
+        'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"\n'
+        'PI_BIN="$DIR/node_modules/.bin/pi"\n'
+        'if [ ! -x "$PI_BIN" ]; then\n'
+        '    echo "Pi CLI not found at $PI_BIN; run harness2 setup --substrate pi" >&2\n'
+        "    exit 1\n"
+        "fi\n"
+        'exec "$PI_BIN" "$@"\n'
+    )
+    launcher.write_text(launcher_content, encoding="utf-8")
+    launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    configure_pi(dry_run=dry_run)
+    _share_with_containers(root)
+    print(f"Pi Coding Agent ({pkg}) installed successfully at {launcher}", flush=True)
 
 
 def download_jobbench(*, dry_run=False):

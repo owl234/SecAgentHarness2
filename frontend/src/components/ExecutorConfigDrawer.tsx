@@ -30,8 +30,6 @@ import {
   saveExecutorConfig,
   testExecutorEndpoint,
   fetchAvailableModels,
-  startResponsesBridge,
-  stopResponsesBridge,
 } from '../api';
 import {
   ExecutorFormValues,
@@ -82,7 +80,6 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
   const [showApiKey, setShowApiKey] = useState(false);
   const [showJudgeApiKey, setShowJudgeApiKey] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
-  const [bridgeBusy, setBridgeBusy] = useState(false);
 
   // Combobox dropdown state
   const [comboboxOpen, setComboboxOpen] = useState(false);
@@ -138,7 +135,6 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
   if (!isOpen) return null;
 
   const unifiedCfg = executorsData?.unified_config;
-  const bridge = executorsData?.bridge;
   const claudeSub = executorsData?.executors.find((e) => e.id === 'claude');
   const ocSub = executorsData?.executors.find((e) => e.id === 'oc');
   const cxSub = executorsData?.executors.find((e) => e.id === 'cx');
@@ -275,46 +271,6 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
       showToast(tx(`配置保存失败: ${message}`, `Save failed: ${message}`), 'error');
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleStartBridge = async () => {
-    setBridgeBusy(true);
-    try {
-      const res = await startResponsesBridge({
-        upstream: form.unifiedBaseUrl || undefined,
-        api_key: form.unifiedApiKey || undefined,
-        host: form.bridgeHost,
-        auto_bind_codex: true,
-      });
-      applyExecutorsData(res.executors);
-      showToast(
-        tx(
-          'Responses 转换桥已启动，并已自动绑定 Codex 配置！',
-          'Responses Bridge started and bound to Codex!'
-        ),
-        'success'
-      );
-      if (onExecutorChanged) onExecutorChanged();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      showToast(tx(`转换桥启动失败: ${message}`, `Bridge start failed: ${message}`), 'error');
-    } finally {
-      setBridgeBusy(false);
-    }
-  };
-
-  const handleStopBridge = async () => {
-    setBridgeBusy(true);
-    try {
-      const res = await stopResponsesBridge();
-      applyExecutorsData(res.executors);
-      showToast(tx('Responses 转换桥已停止', 'Responses Bridge stopped'), 'info');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      showToast(tx(`停止转换桥失败: ${message}`, `Bridge stop failed: ${message}`), 'error');
-    } finally {
-      setBridgeBusy(false);
     }
   };
 
@@ -811,11 +767,11 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                 <div className="flex items-center gap-1.5 text-[11px]">
                   <span
                     className={`w-2 h-2 rounded-full ${
-                      cxSub?.status === 'ready' || bridge?.running ? 'bg-emerald-500' : 'bg-emerald-400'
+                      cxSub?.status === 'ready' ? 'bg-emerald-500' : 'bg-slate-400'
                     }`}
                   />
                   <span className="text-slate-600 dark:text-slate-400 font-medium">
-                    {bridge?.running ? tx('转换桥中转', 'Via Bridge') : tx('就绪', 'Ready')}
+                    {cxSub?.status === 'ready' ? tx('就绪', 'Ready') : tx('待配置', 'Pending')}
                   </span>
                 </div>
               </div>
@@ -897,8 +853,8 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                     {tx(
-                      'Claude 推理强度、Codex 本地 Responses 转换桥及独立裁判模型覆盖',
-                      'Claude reasoning effort, Responses bridge, and separate judge model override'
+                      'Claude 推理强度及独立裁判模型覆盖',
+                      'Claude reasoning effort and separate judge model override'
                     )}
                   </div>
                 </div>
@@ -939,58 +895,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                   </p>
                 </div>
 
-                {/* 2. Responses Bridge Control */}
-                <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-950/50 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                        <Terminal className="w-3.5 h-3.5 text-emerald-500" />
-                        <span>{tx('Codex 本地 Responses 协议转换桥', 'Codex Local Responses Bridge')}</span>
-                      </div>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-                        {tx(
-                          '当统一 API 仅支持 OpenAI Chat 且无原生 Responses 时，转换桥在 127.0.0.1 自动转译。',
-                          'Translates OpenAI Chat to Responses API locally when upstream does not support Responses natively.'
-                        )}
-                      </p>
-                    </div>
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                        bridge?.running
-                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                          : 'bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                      }`}
-                    >
-                      {bridge?.running
-                        ? tx(`运行中 (Port ${bridge.port || 8000})`, `Running (Port ${bridge.port || 8000})`)
-                        : tx('已停止', 'Stopped')}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 pt-1">
-                    {bridge?.running ? (
-                      <button
-                        type="button"
-                        disabled={bridgeBusy}
-                        onClick={handleStopBridge}
-                        className="px-3 py-1.5 text-xs font-medium text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-xl cursor-pointer disabled:opacity-50"
-                      >
-                        {tx('停止转换桥', 'Stop Bridge')}
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={bridgeBusy}
-                        onClick={handleStartBridge}
-                        className="px-3 py-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 rounded-xl cursor-pointer disabled:opacity-50"
-                      >
-                        {tx('启动转换桥并绑定 Codex', 'Start Bridge & Bind Codex')}
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* 3. Judge Model Override */}
+                {/* 2. Judge Model Override */}
                 <div className="space-y-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">

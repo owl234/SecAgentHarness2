@@ -19,6 +19,8 @@ export const en: Record<ZhKey, string> = {
   'nav.ready': 'Ready',
   'nav.offline': 'Offline',
   'nav.guide_title': 'View SecAgentHarness² Theory Guide (c1..c9 / k-budget / DAG)',
+  'api.update_executor': 'Failed to update executor configuration',
+  'api.fetch_models': 'Failed to fetch model list from endpoint',
 };
 
 export type Lang = 'zh' | 'en';

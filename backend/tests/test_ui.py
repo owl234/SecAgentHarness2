@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import json
 import unittest
 from pathlib import Path
 
@@ -277,6 +278,248 @@ class UITests(unittest.TestCase):
         res_demo_judge = self.client.post("/api/execute/judge", json={"run_id": "demo"})
         self.assertEqual(res_demo_judge.status_code, 400)
         self.assertIn("Demo", res_demo_judge.json()["detail"])
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_fetch_endpoint_models_openai_format(self, mock_urlopen):
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.status = 200
+        mock_resp.read.return_value = json.dumps({
+            "data": [
+                {"id": "gpt-4o"},
+                {"id": "deepseek-chat"},
+                {"id": "claude-3-7-sonnet"}
+            ]
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+        res = scanner.fetch_endpoint_models(base_url="https://api.openai.com/v1", api_key="sk-test")
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["models"], ["claude-3-7-sonnet", "deepseek-chat", "gpt-4o"])
+        self.assertIn("成功获取 3 个可用模型", res["message"])
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_fetch_endpoint_models_anthropic_format(self, mock_urlopen):
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.status = 200
+        mock_resp.read.return_value = json.dumps({
+            "data": [
+                {"type": "model", "id": "claude-sonnet-4-6"},
+                {"type": "model", "id": "claude-opus-4-6"}
+            ]
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+        res = scanner.fetch_endpoint_models(base_url="https://api.anthropic.com", api_key="sk-ant", protocol="anthropic")
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["models"], ["claude-opus-4-6", "claude-sonnet-4-6"])
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_fetch_endpoint_models_auth_error(self, mock_urlopen):
+        import urllib.error
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url="https://api.openai.com/v1/models",
+            code=401,
+            msg="Unauthorized",
+            hdrs={},
+            fp=unittest.mock.MagicMock(read=lambda *args: b'{"error":"invalid_api_key"}'),
+        )
+        res = scanner.fetch_endpoint_models(base_url="https://api.openai.com/v1", api_key="bad-key")
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["models"], [])
+        self.assertIn("鉴权被拒", res["message"])
+
+    def test_fetch_endpoint_models_missing_url(self):
+        import os
+        saved_env = dict(os.environ)
+        try:
+            os.environ.pop("SEC_AGENT_HARNESS2_API_BASE_URL", None)
+            os.environ.pop("HARNESS2_API_BASE_URL", None)
+            scanner.sync_config_from_env()
+            res = scanner.fetch_endpoint_models(base_url="")
+            self.assertFalse(res["ok"])
+            self.assertIn("未配置 API 基础地址", res["message"])
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
+            scanner.sync_config_from_env()
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_api_executors_models(self, mock_urlopen):
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.status = 200
+        mock_resp.read.return_value = json.dumps({
+            "data": [{"id": "model-a"}, {"id": "model-b"}]
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+        res = self.client.post("/api/executors/models", json={"base_url": "https://api.example.com/v1", "api_key": "test"})
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["models"], ["model-a", "model-b"])
+
+    def test_unified_config_synchronizes_all_substrates(self):
+        import tempfile
+        import os
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            (tmp_root / ".env").write_text(
+                "SEC_AGENT_HARNESS2_CODEX_MODEL=stale-codex\n"
+                "SEC_AGENT_HARNESS2_CLAUDE_MODEL=stale-claude\n"
+                "SEC_AGENT_HARNESS2_SOLVER_MODEL=stale-oc\n",
+                encoding="utf-8",
+            )
+            saved_env = dict(os.environ)
+            try:
+                tmp_app = create_app(workspace_root=tmp_root, runs_root=self.runs_root)
+                tmp_client = TestClient(tmp_app)
+                res = tmp_client.post(
+                    "/api/executors/config",
+                    json={
+                        "executor_id": "unified",
+                        "base_url": "https://api.unified.example/v1",
+                        "api_key": "sk-unified-123",
+                        "model": "gpt-5.4",
+                        "protocol": "openai-chat",
+                        "persist_dotenv": True,
+                    },
+                )
+                self.assertEqual(res.status_code, 200)
+                env_text = (tmp_root / ".env").read_text(encoding="utf-8")
+                self.assertIn("SEC_AGENT_HARNESS2_API_MODEL=gpt-5.4", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_SOLVER_MODEL=sec_agent_harness2/gpt-5.4", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_CODEX_MODEL=gpt-5.4", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_CLAUDE_MODEL=gpt-5.4", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_IMPROVER_MODEL=sec_agent_harness2/gpt-5.4", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_JUDGE_MODEL=gpt-5.4", env_text)
+            finally:
+                os.environ.clear()
+                os.environ.update(saved_env)
+                scanner.sync_config_from_env()
+
+    def test_solver_model_claude_defaults_to_api_model(self):
+        import os
+        saved_env = dict(os.environ)
+        try:
+            os.environ["SEC_AGENT_HARNESS2_API_MODEL"] = "my-custom-model"
+            os.environ.pop("SEC_AGENT_HARNESS2_CLAUDE_MODEL", None)
+            scanner.sync_config_from_env()
+            self.assertEqual(C.SOLVER_MODEL_CLAUDE, "my-custom-model")
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
+            scanner.sync_config_from_env()
+
+
+    def test_unified_config_model_prefix_stripping(self):
+        import tempfile
+        import os
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            saved_env = dict(os.environ)
+            try:
+                tmp_app = create_app(workspace_root=tmp_root, runs_root=self.runs_root)
+                tmp_client = TestClient(tmp_app)
+                res = tmp_client.post(
+                    "/api/executors/config",
+                    json={
+                        "executor_id": "unified",
+                        "base_url": "https://api.unified.example/v1",
+                        "api_key": "sk-unified-123",
+                        "model": "sec_agent_harness2/claude-sonnet-4-6",
+                        "persist_dotenv": True,
+                    },
+                )
+                self.assertEqual(res.status_code, 200)
+                env_text = (tmp_root / ".env").read_text(encoding="utf-8")
+                self.assertIn("SEC_AGENT_HARNESS2_API_MODEL=claude-sonnet-4-6", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_CODEX_MODEL=claude-sonnet-4-6", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_CLAUDE_MODEL=claude-sonnet-4-6", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_JUDGE_MODEL=claude-sonnet-4-6", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_SOLVER_MODEL=sec_agent_harness2/claude-sonnet-4-6", env_text)
+                self.assertNotIn("sec_agent_harness2/sec_agent_harness2/", env_text)
+            finally:
+                os.environ.clear()
+                os.environ.update(saved_env)
+                scanner.sync_config_from_env()
+
+    def test_unified_config_judge_override_and_clearing(self):
+        import tempfile
+        import os
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            (tmp_root / ".env").write_text(
+                "SEC_AGENT_HARNESS2_JUDGE_BASE_URL=https://stale-judge.example/v1\n"
+                "SEC_AGENT_HARNESS2_JUDGE_API_KEY=sk-stale-judge\n",
+                encoding="utf-8",
+            )
+            saved_env = dict(os.environ)
+            try:
+                tmp_app = create_app(workspace_root=tmp_root, runs_root=self.runs_root)
+                tmp_client = TestClient(tmp_app)
+                res = tmp_client.post(
+                    "/api/executors/config",
+                    json={
+                        "executor_id": "unified",
+                        "base_url": "https://api.unified.example/v1",
+                        "api_key": "sk-unified-123",
+                        "model": "gpt-5.4",
+                        "judge_model": "gemini-2.5-pro",
+                        "judge_base_url": "",
+                        "persist_dotenv": True,
+                    },
+                )
+                self.assertEqual(res.status_code, 200)
+                env_text = (tmp_root / ".env").read_text(encoding="utf-8")
+                self.assertIn("SEC_AGENT_HARNESS2_API_MODEL=gpt-5.4", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_JUDGE_MODEL=gemini-2.5-pro", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_JUDGE_BASE_URL=", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_JUDGE_API_KEY=", env_text)
+            finally:
+                os.environ.clear()
+                os.environ.update(saved_env)
+                scanner.sync_config_from_env()
+
+    @unittest.mock.patch("urllib.request.urlopen")
+    def test_fetch_endpoint_models_url_cleanup_and_alternative_payloads(self, mock_urlopen):
+        mock_resp = unittest.mock.MagicMock()
+        mock_resp.status = 200
+        mock_resp.read.return_value = json.dumps({
+            "result": [
+                {"name": "openrouter/nvidia/nemotron-3-ultra-550b:free"},
+                {"model": "deepseek-ai/deepseek-chat"},
+            ]
+        }).encode("utf-8")
+        mock_urlopen.return_value.__enter__.return_value = mock_resp
+
+        # Trailing /chat/completions should be stripped so candidate becomes /v1/models
+        res = scanner.fetch_endpoint_models(base_url="https://api.example.com/v1/chat/completions", api_key="sk-test")
+        self.assertTrue(res["ok"])
+        self.assertEqual(res["models"], [
+            "deepseek-ai/deepseek-chat",
+            "openrouter/nvidia/nemotron-3-ultra-550b:free"
+        ])
+
+    def test_judge_model_and_endpoint_fallback_to_api_model(self):
+        import os
+        saved_env = dict(os.environ)
+        try:
+            os.environ["SEC_AGENT_HARNESS2_API_MODEL"] = "unified-model-99"
+            os.environ["SEC_AGENT_HARNESS2_API_BASE_URL"] = "https://unified.endpoint/v1"
+            os.environ["SEC_AGENT_HARNESS2_API_KEY"] = "sk-unified-key"
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_MODEL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_BASE_URL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_API_KEY", None)
+            os.environ.pop("GOOGLE_CLOUD_PROJECT", None)
+            scanner.sync_config_from_env()
+
+            self.assertEqual(C.JUDGE_MODEL, "unified-model-99")
+            self.assertEqual(C.JB_JUDGE_API_BASE, "https://unified.endpoint/v1")
+            self.assertEqual(C.JB_JUDGE_API_KEY, "sk-unified-key")
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
+            scanner.sync_config_from_env()
 
 
 if __name__ == "__main__":

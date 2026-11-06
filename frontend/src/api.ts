@@ -4,6 +4,7 @@ import {
   ComponentTemplate,
   DiffResult,
   EndpointProbeResult,
+  FetchModelsResult,
   ExecutorStatusResponse,
   HarnessComponent,
   LibraryEntry,
@@ -302,6 +303,23 @@ export async function testExecutorEndpoint(payload: {
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Failed' }));
     throw new Error(err.detail || 'Endpoint test failed');
+  }
+  return res.json();
+}
+
+export async function fetchAvailableModels(payload: {
+  base_url?: string;
+  api_key?: string;
+  protocol?: string;
+}): Promise<FetchModelsResult> {
+  const res = await fetch(`${BASE}/executors/models`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Failed' }));
+    throw new Error(err.detail || t('api.fetch_models'));
   }
   return res.json();
 }

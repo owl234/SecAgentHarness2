@@ -78,6 +78,12 @@ class ExecutorProbeRequest(BaseModel):
     model: str | None = None
 
 
+class ExecutorModelsRequest(BaseModel):
+    base_url: str | None = None
+    api_key: str | None = None
+    protocol: str | None = None
+
+
 class BridgeControlRequest(BaseModel):
     upstream: str | None = None
     api_key: str | None = None
@@ -364,13 +370,55 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
 
         if req.executor_id == "unified":
             if eff_base is not None:
-                updates["SEC_AGENT_HARNESS2_API_BASE_URL"] = eff_base
+                updates["SEC_AGENT_HARNESS2_API_BASE_URL"] = eff_base.strip()
             if req.api_key:
-                updates["SEC_AGENT_HARNESS2_API_KEY"] = req.api_key
+                updates["SEC_AGENT_HARNESS2_API_KEY"] = req.api_key.strip()
             if req.model is not None:
-                updates["SEC_AGENT_HARNESS2_API_MODEL"] = req.model
+                cleaned_model = req.model.strip()
+                bare_model = (
+                    cleaned_model[len("sec_agent_harness2/") :]
+                    if cleaned_model.startswith("sec_agent_harness2/")
+                    else cleaned_model
+                )
+                updates["SEC_AGENT_HARNESS2_API_MODEL"] = bare_model
+                # Automatically synchronize and align API_MODEL across all substrates
+                oc_effective_base = eff_base or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", "")
+                oc_model = (
+                    f"sec_agent_harness2/{bare_model}"
+                    if (bare_model and oc_effective_base)
+                    else bare_model
+                )
+                updates["SEC_AGENT_HARNESS2_SOLVER_MODEL"] = oc_model
+                updates["SEC_AGENT_HARNESS2_CODEX_MODEL"] = bare_model
+                updates["SEC_AGENT_HARNESS2_CLAUDE_MODEL"] = bare_model
+                updates["SEC_AGENT_HARNESS2_IMPROVER_MODEL"] = oc_model
+                if req.judge_model is not None and req.judge_model.strip():
+                    j_clean = req.judge_model.strip()
+                    if j_clean.startswith("sec_agent_harness2/"):
+                        j_clean = j_clean[len("sec_agent_harness2/") :]
+                    updates["SEC_AGENT_HARNESS2_JUDGE_MODEL"] = j_clean
+                else:
+                    updates["SEC_AGENT_HARNESS2_JUDGE_MODEL"] = bare_model
+            elif req.judge_model is not None:
+                j_clean = req.judge_model.strip()
+                if j_clean.startswith("sec_agent_harness2/"):
+                    j_clean = j_clean[len("sec_agent_harness2/") :]
+                updates["SEC_AGENT_HARNESS2_JUDGE_MODEL"] = j_clean
+
+            if req.judge_base_url is not None:
+                j_base = req.judge_base_url.strip()
+                updates["SEC_AGENT_HARNESS2_JUDGE_BASE_URL"] = j_base
+                if not j_base:
+                    # Clear judge api key if custom base url is cleared
+                    updates["SEC_AGENT_HARNESS2_JUDGE_API_KEY"] = ""
+            if req.judge_api_key:
+                updates["SEC_AGENT_HARNESS2_JUDGE_API_KEY"] = req.judge_api_key.strip()
             if req.protocol is not None:
-                updates["SEC_AGENT_HARNESS2_API_PROTOCOL"] = req.protocol
+                proto = req.protocol.strip()
+                updates["SEC_AGENT_HARNESS2_API_PROTOCOL"] = proto
+                updates["SEC_AGENT_HARNESS2_CLAUDE_PROTOCOL"] = proto
+            if req.effort is not None:
+                updates["SEC_AGENT_HARNESS2_CLAUDE_EFFORT"] = req.effort.strip()
         elif req.executor_id == "claude":
             if eff_base is not None:
                 updates["SEC_AGENT_HARNESS2_CLAUDE_BASE_URL"] = eff_base
@@ -442,6 +490,15 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
             api_key=req.api_key,
             protocol=req.protocol,
             model=req.model,
+        )
+
+    @app.post("/api/executors/models")
+    async def get_executor_models(req: ExecutorModelsRequest):
+        return scanner.fetch_endpoint_models(
+            base_url=req.base_url,
+            api_key=req.api_key,
+            protocol=req.protocol,
+            workspace_root=workspace_root,
         )
 
     @app.post("/api/executors/bridge/start")

@@ -312,6 +312,13 @@ export interface EndpointProbeResult {
   message: string;
 }
 
+export interface FetchModelsResult {
+  ok: boolean;
+  models: string[];
+  latency_ms: number;
+  message: string;
+}
+
 export interface ExecutorItem {
   id: string;
   name: string;

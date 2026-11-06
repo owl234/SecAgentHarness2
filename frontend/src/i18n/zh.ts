@@ -56,6 +56,7 @@ export const zh = {
   'api.apply_component': '装配组件失败',
   'api.executors': '获取执行器状态失败',
   'api.update_executor': '更新执行器配置失败',
+  'api.fetch_models': '获取端点模型列表失败',
   // ---- common ----
   'common.loading': '正在加载...',
   'common.run': '选择运行:',

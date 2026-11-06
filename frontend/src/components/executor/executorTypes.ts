@@ -66,13 +66,20 @@ export function buildFormFromExecutorsData(
   prev: ExecutorFormValues
 ): ExecutorFormValues {
   const next = { ...prev };
+  next.unifiedApiKey = '';
+  next.judgeApiKey = '';
+
   if (data.unified_config) {
     next.unifiedBaseUrl = data.unified_config.base_url || '';
-    next.unifiedModel = data.unified_config.model || '';
+    const rawModel = data.unified_config.model || '';
+    next.unifiedModel = rawModel.replace(/^sec_agent_harness2\//, '');
     next.unifiedProtocol = data.unified_config.protocol || '';
     next.improverModel = data.unified_config.improver_model || '';
-    next.judgeModel = data.unified_config.judge_model || '';
-    next.judgeBaseUrl = data.unified_config.judge_base_url || '';
+    const rawJudgeModel = data.unified_config.judge_model || '';
+    const bareJudge = rawJudgeModel.replace(/^sec_agent_harness2\//, '');
+    next.judgeModel = bareJudge && bareJudge !== next.unifiedModel ? bareJudge : '';
+    const rawJudgeBase = data.unified_config.judge_base_url || '';
+    next.judgeBaseUrl = rawJudgeBase && rawJudgeBase !== next.unifiedBaseUrl ? rawJudgeBase : '';
     next.vertexProject = data.unified_config.vertex_project || '';
     next.vertexLocation = data.unified_config.vertex_location || 'global';
   }

@@ -409,7 +409,7 @@ CODEX_CONFIG_REMEDY = "rerun harness2-setup <bench> --substrate cx"
 CODEX_PROVIDER = "sec_agent_harness2"
 
 
-def configure_codex(*, dry_run=False):
+def configure_codex(*, dry_run=False, home_dir: Path | None = None):
     endpoint = api.codex()
     if endpoint is None or not endpoint.base_url:
         raise config.ConfigError(
@@ -423,13 +423,15 @@ def configure_codex(*, dry_run=False):
         f"base_url = {json.dumps(endpoint.base_url)}\n"
         'wire_api = "responses"\nenv_key = "VERTEX_PROXY_KEY"\n'
     )
+    target_home = home_dir or config.CODEX_HOME_DIR
     if not dry_run:
-        config.CODEX_HOME_DIR.mkdir(parents=True, exist_ok=True)
-        (config.CODEX_HOME_DIR / "config.toml").write_text(body, encoding="utf-8")
-        write_codex_launcher()
+        target_home.mkdir(parents=True, exist_ok=True)
+        (target_home / "config.toml").write_text(body, encoding="utf-8")
+        if target_home == config.CODEX_HOME_DIR:
+            write_codex_launcher()
 
 
-def codex_config_error() -> str | None:
+def codex_config_error(*, home_dir: Path | None = None) -> str | None:
     """Why `CODEX_HOME/config.toml` no longer matches the live Codex configuration.
 
     `configure_codex` bakes the endpoint and the model into a file that the Codex CLI
@@ -439,7 +441,8 @@ def codex_config_error() -> str | None:
     endpoint is silently ignored and the run contacts the stale one. Returns None when
     the file agrees with the environment, else a message naming the remedy.
     """
-    path = config.CODEX_HOME_DIR / "config.toml"
+    target_home = home_dir or config.CODEX_HOME_DIR
+    path = target_home / "config.toml"
     try:
         data = tomllib.loads(path.read_text(encoding="utf-8"))
     except OSError:

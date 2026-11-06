@@ -1848,13 +1848,13 @@ def sync_config_from_env() -> None:
     config.API_MODEL = config.env("SEC_AGENT_HARNESS2_API_MODEL", "")
     config.SOLVER_MODEL_OC = config._solver_model_oc()
     config.SOLVER_MODEL_CX = config.env(
-        "SEC_AGENT_HARNESS2_CODEX_MODEL", config.SOLVER_MODEL_OC.split("/", 1)[-1]
+        "SEC_AGENT_HARNESS2_CODEX_MODEL", config.SOLVER_MODEL_OC.removeprefix("sec_agent_harness2/")
     )
     config.SOLVER_MODEL_CLAUDE = config.env(
         "SEC_AGENT_HARNESS2_CLAUDE_MODEL", config.API_MODEL or "claude-3-7-sonnet-20250219"
     )
     config.IMPROVER_MODEL = config.env("SEC_AGENT_HARNESS2_IMPROVER_MODEL", config.SOLVER_MODEL_OC)
-    config.JUDGE_MODEL = config.env("SEC_AGENT_HARNESS2_JUDGE_MODEL", "")
+    config.JUDGE_MODEL = config.env("SEC_AGENT_HARNESS2_JUDGE_MODEL", config.API_MODEL)
     config.PROPOSER_MODEL_BY_CHANNEL = {
         "opencode": config.IMPROVER_MODEL,
         "claude_cli": config.IMPROVER_MODEL,
@@ -1870,9 +1870,12 @@ def sync_config_from_env() -> None:
     )
     config.JB_JUDGE_API_BASE = config.env(
         "SEC_AGENT_HARNESS2_JUDGE_BASE_URL",
-        config.VERTEX_OPENAI_URL if config.VERTEX_PROJECT else "",
+        (config.VERTEX_OPENAI_URL if config.VERTEX_PROJECT else "") or config.API_BASE_URL,
     )
-    config.JB_JUDGE_API_KEY = config.env("SEC_AGENT_HARNESS2_JUDGE_API_KEY", "")
+    config.JB_JUDGE_API_KEY = config.env(
+        "SEC_AGENT_HARNESS2_JUDGE_API_KEY",
+        config.API_KEY if not config.VERTEX_PROJECT else "",
+    )
     config.LAB_JUDGE_MODEL = (
         "vertex/" + config.JUDGE_MODEL
         if config.JUDGE_MODEL.startswith(("claude", "gemini"))
@@ -1965,28 +1968,41 @@ def persist_env_updates(
     # Sync derived files when operating on the repository workspace:
     # 1. Codex home/config.toml when Codex endpoint is present
     ep_cx = api.codex()
-    if ep_cx is not None and ep_cx.base_url and workspace_root.resolve() == config.ROOT.resolve():
+    if ep_cx is not None and ep_cx.base_url:
         try:
-            install.configure_codex(dry_run=False)
-            synced_files.append(str((config.CODEX_HOME_DIR / "config.toml").relative_to(workspace_root)))
+            target_codex_home = workspace_root / "dependencies" / "codex" / "home"
+            install.configure_codex(dry_run=False, home_dir=target_codex_home)
+            toml_file = target_codex_home / "config.toml"
+            if toml_file.is_file():
+                try:
+                    synced_files.append(str(toml_file.relative_to(workspace_root)))
+                except ValueError:
+                    synced_files.append("dependencies/codex/home/config.toml")
         except Exception:
             pass
 
     # 2. Claude clawgod provider.json when protocol is openai-chat (or reset when anthropic)
     claude_dir = workspace_root / "dependencies" / "claude"
     ep_cl = api.claude()
-    if claude_dir.is_dir():
+    if claude_dir.is_dir() or (workspace_root / "dependencies").is_dir():
         prov_file = claude_dir / "provider.json"
         try:
             if ep_cl is not None and ep_cl.protocol == "openai-chat":
+                claude_dir.mkdir(parents=True, exist_ok=True)
                 prov_file.write_text(api.claude_provider_json(ep_cl), encoding="utf-8")
                 prov_file.chmod(0o600)
-                synced_files.append(str(prov_file.relative_to(workspace_root)))
+                try:
+                    synced_files.append(str(prov_file.relative_to(workspace_root)))
+                except ValueError:
+                    synced_files.append("dependencies/claude/provider.json")
             elif prov_file.is_file():
                 cur = _safe_read_json(prov_file) or {}
                 if cur.get("protocol") == "openai-chat":
                     prov_file.write_text("{}\n", encoding="utf-8")
-                    synced_files.append(str(prov_file.relative_to(workspace_root)))
+                    try:
+                        synced_files.append(str(prov_file.relative_to(workspace_root)))
+                    except ValueError:
+                        synced_files.append("dependencies/claude/provider.json")
         except Exception:
             pass
 
@@ -2148,7 +2164,7 @@ def probe_executor_endpoint(
         code, snippet = _do_req(models_url, "GET", headers=auth_headers)
         # If /models is not implemented on a proxy (404/405), fall back to protocol-specific endpoint probe
         if code in (404, 405):
-            bare_model = eff_model.split("/", 1)[-1] if eff_model else "gpt-4o"
+            bare_model = eff_model.removeprefix("sec_agent_harness2/") if eff_model else "gpt-4o"
             if eff_proto == "anthropic":
                 msg_url = clean_base + ("/messages" if clean_base.endswith("/v1") else "/v1/messages")
                 code, snippet = _do_req(
@@ -2213,6 +2229,185 @@ def probe_executor_endpoint(
         }
 
 
+def fetch_endpoint_models(
+    base_url: str | None = None,
+    api_key: str | None = None,
+    protocol: str | None = None,
+    workspace_root: Path | None = None,
+) -> dict[str, Any]:
+    """Query an API endpoint for available models via /v1/models or /models.
+
+    Supports both OpenAI format (`data[].id`) and Anthropic format (`data[].id`).
+    Returns dict:
+        ok: bool
+        models: list[str] (deduplicated & sorted)
+        latency_ms: int
+        message: str
+    """
+    import json
+    import time
+    import urllib.error
+    import urllib.request
+
+    from .. import config
+
+    sync_config_from_env()
+
+    eff_url = (
+        base_url
+        if base_url is not None and base_url.strip()
+        else (config.API_BASE_URL or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", ""))
+    ).strip()
+
+    eff_key = (
+        api_key
+        if api_key is not None and api_key.strip()
+        else (config.API_KEY or os.environ.get("SEC_AGENT_HARNESS2_API_KEY", ""))
+    ).strip()
+
+    eff_proto = (
+        protocol
+        if protocol is not None and protocol.strip()
+        else os.environ.get("SEC_AGENT_HARNESS2_API_PROTOCOL", "openai-chat")
+    ).strip()
+
+    if not eff_url:
+        return {
+            "ok": False,
+            "models": [],
+            "latency_ms": 0,
+            "message": "未配置 API 基础地址 (Base URL)，请先填写端点地址",
+        }
+
+    clean_base = eff_url.rstrip("/")
+    for suffix in ("/chat/completions", "/messages", "/responses"):
+        if clean_base.endswith(suffix):
+            clean_base = clean_base[: -len(suffix)]
+            break
+
+    if clean_base.endswith("/models"):
+        candidate_urls = [clean_base]
+    elif clean_base.endswith("/v1"):
+        candidate_urls = [f"{clean_base}/models", f"{clean_base[:-3]}/models"]
+    else:
+        candidate_urls = [f"{clean_base}/v1/models", f"{clean_base}/models"]
+
+    auth_headers: dict[str, str] = {
+        "User-Agent": "SecAgentHarness2-ModelScanner/0.1",
+        "Accept": "application/json",
+    }
+    if eff_key:
+        auth_headers["Authorization"] = f"Bearer {eff_key}"
+        auth_headers["x-api-key"] = eff_key
+
+    if eff_proto == "anthropic" or "anthropic" in clean_base.lower():
+        auth_headers["anthropic-version"] = "2023-06-01"
+
+    t0 = time.perf_counter()
+    last_err_msg = ""
+    last_status_code = None
+
+    for idx, target_url in enumerate(candidate_urls):
+        req = urllib.request.Request(target_url, headers=auth_headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=10.0) as resp:
+                code = resp.status
+                raw = resp.read(5 * 1024 * 1024).decode("utf-8", errors="replace")
+                latency_ms = int((time.perf_counter() - t0) * 1000)
+
+                try:
+                    payload = json.loads(raw)
+                except Exception as json_err:
+                    return {
+                        "ok": False,
+                        "models": [],
+                        "latency_ms": latency_ms,
+                        "message": f"端点返回非合法 JSON 数据 (HTTP {code}): {json_err}",
+                    }
+
+                items = []
+                if isinstance(payload, dict):
+                    if isinstance(payload.get("data"), list):
+                        items = payload["data"]
+                    elif isinstance(payload.get("models"), list):
+                        items = payload["models"]
+                    elif isinstance(payload.get("model_list"), list):
+                        items = payload["model_list"]
+                    elif isinstance(payload.get("result"), list):
+                        items = payload["result"]
+                    elif isinstance(payload.get("data"), dict) and isinstance(payload["data"].get("models"), list):
+                        items = payload["data"]["models"]
+                elif isinstance(payload, list):
+                    items = payload
+
+                extracted: set[str] = set()
+                for item in items:
+                    if isinstance(item, dict):
+                        m_id = item.get("id") or item.get("name") or item.get("model")
+                        if m_id and isinstance(m_id, str):
+                            extracted.add(m_id.strip())
+                    elif isinstance(item, str) and item.strip():
+                        extracted.add(item.strip())
+
+                models = sorted(list(extracted), key=lambda x: (x.lower(), x))
+
+                if models:
+                    return {
+                        "ok": True,
+                        "models": models,
+                        "latency_ms": latency_ms,
+                        "message": f"成功获取 {len(models)} 个可用模型 ({latency_ms}ms)",
+                    }
+                else:
+                    return {
+                        "ok": True,
+                        "models": [],
+                        "latency_ms": latency_ms,
+                        "message": f"端点响应成功 (HTTP {code}, {latency_ms}ms)，但未包含模型列表",
+                    }
+        except urllib.error.HTTPError as e:
+            last_status_code = e.code
+            err_body = ""
+            try:
+                err_body = e.read(500).decode("utf-8", errors="replace")
+            except Exception:
+                pass
+
+            if e.code in (400, 404, 405) and idx + 1 < len(candidate_urls):
+                continue
+
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            if e.code in (401, 403):
+                msg = f"网络可达但鉴权被拒 (HTTP {e.code}, {latency_ms}ms): 请检查 API Key 是否有效"
+            elif e.code in (404, 405):
+                msg = f"端点未提供 /models 模型枚举接口 (HTTP {e.code}, {latency_ms}ms)，您仍可手动在输入框中直接输入模型名称。"
+            else:
+                short = err_body.strip().replace("\n", " ")[:120]
+                msg = f"端点返回状态 HTTP {e.code} ({latency_ms}ms){': ' + short if short else ''}"
+            return {
+                "ok": False,
+                "models": [],
+                "latency_ms": latency_ms,
+                "message": msg,
+            }
+        except Exception as exc:
+            latency_ms = int((time.perf_counter() - t0) * 1000)
+            return {
+                "ok": False,
+                "models": [],
+                "latency_ms": latency_ms,
+                "message": f"连接端点失败: {type(exc).__name__}: {exc}",
+            }
+
+    latency_ms = int((time.perf_counter() - t0) * 1000)
+    return {
+        "ok": False,
+        "models": [],
+        "latency_ms": latency_ms,
+        "message": last_err_msg or f"未能获取模型 (HTTP {last_status_code or 'unknown'})",
+    }
+
+
 def get_executors_status(
     workspace_root: Path, managed_bridge: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -2224,7 +2419,12 @@ def get_executors_status(
     # 0. Unified API & Bridge inspection
     unified_base_url = os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", "")
     unified_key = os.environ.get("SEC_AGENT_HARNESS2_API_KEY", "")
-    unified_model = os.environ.get("SEC_AGENT_HARNESS2_API_MODEL", "")
+    unified_model = (
+        os.environ.get("SEC_AGENT_HARNESS2_API_MODEL", "")
+        or config.API_MODEL
+        or config.SOLVER_MODEL_CX
+        or (config.SOLVER_MODEL_OC.removeprefix("sec_agent_harness2/") if config.SOLVER_MODEL_OC else "")
+    )
     unified_protocol = os.environ.get("SEC_AGENT_HARNESS2_API_PROTOCOL", "")
     bridge_info = get_bridge_status(workspace_root, managed_bridge)
 

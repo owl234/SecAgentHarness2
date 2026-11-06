@@ -15,6 +15,7 @@
 """Unit tests for PiSubstrate (@mariozechner/pi-coding-agent)."""
 
 import json
+import os
 import shutil
 from unittest.mock import MagicMock
 
@@ -179,7 +180,9 @@ def test_find_pi_binary_with_env_override(monkeypatch, tmp_path):
     assert find_pi_binary() == fake_bin
 
     monkeypatch.delenv("HARNESS2_PI_BIN")
-    assert find_pi_binary() == config.PI_BIN
+    wrapper = config.PI_DIST / "bin" / "pi"
+    expected = wrapper if (wrapper.is_file() and os.access(wrapper, os.X_OK)) else config.PI_BIN
+    assert find_pi_binary() == expected
 
 
 def test_pi_models_json_camelcase_and_reasoning():

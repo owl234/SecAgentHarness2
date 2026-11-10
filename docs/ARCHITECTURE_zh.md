@@ -15,7 +15,7 @@ Harness²（*Recursive Agent Harnessing for an Open World*）是一个在**模�
 
 Harness² 严格遵循**三轴正交分离（Three Orthogonal Axes）**设计契约：
 * **Method（优化方法轴）**：递归调度、对比证据打包、无监督盲选决策与跨任务经验库。
-* **Substrate（执行载体轴）**：Agent 运行环境（如 OpenCode、Codex、Claude），与评测集逻辑完全解耦。
+* **Substrate（执行载体轴）**：Agent 运行环境（如 OpenCode、Pi），与评测集逻辑完全解耦。
 * **Benchmark（基准评测轴）**：任务规格（[`BenchSpec`](../backend/sec_agent_harness2/core/spec.py)）与数据集适配器，严禁泄露评测标准给优化器。
 
 ### 1.1 系统架构与代码映射拓扑图
@@ -61,11 +61,10 @@ flowchart TD
     subgraph L4["4. 执行载体与评测执行 (Substrates & Rollout)"]
         direction TB
         SubBase["🔌 Substrate 通用抽象<br>substrate/base.py"]:::substrate
-        subgraph Runners["三大载体实现"]
+        subgraph Runners["双载体实现"]
             direction LR
             OpenCode["🤖 OpenCode 载体<br>substrate/opencode.py"]:::substrate
-            Codex["🤖 Codex 载体<br>substrate/codex.py"]:::substrate
-            Claude["🤖 Claude 载体<br>substrate/claude.py"]:::substrate
+            PiSub["🤖 Pi 载体<br>substrate/pi.py"]:::substrate
         end
         subgraph BenchmarkAdapters["评测适配器群"]
             direction LR

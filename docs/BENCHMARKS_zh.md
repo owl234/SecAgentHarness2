@@ -1,6 +1,6 @@
 # 基准测试指南
 
-请先完成[安装与凭据配置](SETUP_zh.md)。每个基准测试均独立安装；请仅安装您计划运行的基准测试。以下所有命令均支持传入 `--substrate cx` 以使用 [Codex 执行器](SETUP_zh.md#codex-执行器)，或传入 `--substrate claude` 以使用 [Claude 执行器](SETUP_zh.md#claude-执行器) 代替 OpenCode（`harness2` 作为完全兼容的简短别名继续可用）。通过 `--mode parallel` 或 `--mode sequential` 选择递归模式，并通过 `--k` 设置任务级递归预算。请确保在运行（run）、评测（judge）和报告（report）命令中保持这些参数完全一致。
+请先完成[安装与凭据配置](SETUP_zh.md)。每个基准测试均独立安装；请仅安装您计划运行的基准测试。以下所有命令均支持传入 `--substrate pi` 以使用 [Pi 执行器](SETUP_zh.md#pi-执行器) 代替默认的 OpenCode（`harness2` 作为完全兼容的简短别名继续可用）。通过 `--mode parallel` 或 `--mode sequential` 选择递归模式，并通过 `--k` 设置任务级递归预算。请确保在运行（run）、评测（judge）和报告（report）命令中保持这些参数完全一致。
 
 <a id="lab"></a>
 ## LAB
@@ -73,4 +73,4 @@ sec-agent-harness2 report --bench wb --subset office --k 1 --mode parallel
 
 任务根据 `dependencies/workbuddy-bench/datasets/wb-bench-<subset>-v1.0/tasks/` 下的 `task.toml` 与 `instruction.md` 进行发现。经验库（Libraries）在 code 子集下使用 `metadata.role` 分类，在 office 和 web 子集下使用 `metadata.category` 分类。每次轨迹采样（Rollout）均使用全新的基准测试 Docker 容器。适配器会读取验证器的 `score.json`；优化器绝不会接收到验证器的输出。缺失验证器结果的任务保持未评分状态。运行结果保存在 `runs/wb/<subset>/`。
 
-对于 Codex 执行器，请通过 `sec-agent-harness2-bridge --host 0.0.0.0` 启动 Bridge，以便容器内的进程能够访问宿主机端点。
+

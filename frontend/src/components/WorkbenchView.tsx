@@ -51,7 +51,7 @@ export const WorkbenchView: React.FC<WorkbenchViewProps> = ({
 
   // Dynamic Pipeline States
   const [pipelineMode, setPipelineMode] = useState<'parallel' | 'sequential'>('parallel');
-  const [activeSubstrate, setActiveSubstrate] = useState<string>('Claude Code (High)');
+  const [activeSubstrate, setActiveSubstrate] = useState<string>('OpenCode');
 
   // Local cleared log filter if user clears terminal in session
   const [clearedBeforeCount, setClearedBeforeCount] = useState<number>(0);

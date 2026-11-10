@@ -17,34 +17,27 @@
 from __future__ import annotations
 
 import json
-import os
 import shlex
 import shutil
 import stat
 import subprocess
 import tempfile
-import tomllib
 from pathlib import Path
 
 from . import api, config
 
 PATCHES = {
-    "opencode": "opencode-compat.diff",
     "job-bench-eval": "job-bench-eval-judge.diff",
     "harvey-labs": "harvey-labs-judge-vertex-anthropic.diff",
     "workbuddy-bench": "workbuddy-bench-runtime.diff",
 }
 
 RUNNERS = (
-    "jb_runner/run_benchmark_codex_cli_adapt.sh",
-    "jb_runner/run_benchmark_claude_cli_adapt.sh",
     "jb_runner/run_benchmark_pi_cli_adapt.sh",
     "lab_runner/opencode/run_opencode.py",
-    "lab_runner/adapt_runs_claude/run_claude_lab.py",
     "lab_runner/adapt_runs_pi/run_pi_lab.py",
     "wb_runner/agents/oc_agent.py",
-    "wb_runner/agents/claude_agent.py",
-    "wb_runner/agents/claude_harness_agent.py",
+    "wb_runner/agents/oc_harness_agent.py",
     "wb_runner/agents/pi_agent.py",
     "wb_runner/agents/pi_harness_agent.py",
 )
@@ -139,8 +132,6 @@ def overlays(name: str, *, dry_run=False):
         pairs = [
             (assets / "lab_runner" / "opencode", repo / "opencode"),
             (assets / "lab_runner" / "tts_lab", repo / "external" / "tts_lab"),
-            (assets / "lab_runner" / "adapt_runs_cx", repo / "external" / "adapt_runs_cx"),
-            (assets / "lab_runner" / "adapt_runs_claude", repo / "external" / "adapt_runs_claude"),
             (assets / "lab_runner" / "adapt_runs_pi", repo / "external" / "adapt_runs_pi"),
         ]
     if name == "workbuddy-bench":
@@ -201,205 +192,11 @@ def workbuddy_models(*, dry_run=False):
             path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-CODEX_LAUNCHER_SCRIPT = """#!/usr/bin/env python3
-from __future__ import annotations
-
-import json
-import os
-import re
-import subprocess
-import sys
-import threading
-import urllib.error
-import urllib.request
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-
-REAL_BIN = Path(__file__).resolve().parent / "bin" / "codex"
-
-
-def _normalize_tools(tools: object) -> list[dict]:
-    if not isinstance(tools, list):
-        return []
-    out: list[dict] = []
-
-    def _add_fn(item: dict) -> None:
-        fn_block = item.get("function") if isinstance(item.get("function"), dict) else {}
-        name = item.get("name") or fn_block.get("name") or ""
-        if not name:
-            return
-        desc = item.get("description") or fn_block.get("description") or ""
-        params = (
-            item.get("parameters")
-            or fn_block.get("parameters")
-            or {"type": "object", "properties": {}}
-        )
-        fn_obj = {"name": name, "description": desc, "parameters": params}
-        merged = dict(item)
-        merged.update(fn_obj)
-        merged["type"] = "function"
-        merged["function"] = fn_obj
-        out.append(merged)
-
-    for tool in tools:
-        if not isinstance(tool, dict):
-            continue
-        ttype = tool.get("type")
-        if ttype == "function":
-            _add_fn(tool)
-        elif ttype == "namespace":
-            for inner in tool.get("tools") or []:
-                if isinstance(inner, dict) and inner.get("type") == "function":
-                    _add_fn(inner)
-        else:
-            out.append(tool)
-    return out
-
-
-def _read_provider_config() -> tuple[str, str]:
-    codex_home = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex"))
-    cfg = codex_home / "config.toml"
-    if not cfg.is_file():
-        return "", ""
-    raw = cfg.read_text(encoding="utf-8", errors="replace")
-    try:
-        import tomllib
-
-        data = tomllib.loads(raw)
-        provider = str(data.get("model_provider") or "")
-        block = (data.get("model_providers") or {}).get(provider) or {}
-        return provider, str(block.get("base_url") or "")
-    except Exception:
-        m_prov = re.search(r'^model_provider\\s*=\\s*"([^"]+)"', raw, re.M)
-        m_url = re.search(r'^base_url\\s*=\\s*"([^"]+)"', raw, re.M)
-        return (m_prov.group(1) if m_prov else ""), (m_url.group(1) if m_url else "")
-
-
-def main() -> int:
-    args = sys.argv[1:]
-    if (
-        not args
-        or args[0] != "exec"
-        or any(f in args for f in ("-V", "--version", "-h", "--help"))
-        or os.environ.get("SEC_AGENT_HARNESS2_NO_CODEX_SHIM")
-    ):
-        os.execv(str(REAL_BIN), [str(REAL_BIN), *args])
-
-    provider, upstream_base = _read_provider_config()
-    if not provider or not upstream_base:
-        os.execv(str(REAL_BIN), [str(REAL_BIN), *args])
-
-    target_url = upstream_base.rstrip("/") + "/responses"
-
-    class ProxyHandler(BaseHTTPRequestHandler):
-        def log_message(self, *a: object) -> None:
-            pass
-
-        def do_POST(self) -> None:
-            length = int(self.headers.get("Content-Length") or 0)
-            raw_body = self.rfile.read(length)
-            try:
-                payload = json.loads(raw_body)
-                if isinstance(payload, dict) and "tools" in payload:
-                    payload["tools"] = _normalize_tools(payload["tools"])
-                    raw_body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            except Exception:
-                pass
-
-            fwd_headers = {}
-            for k in ("Authorization", "Content-Type", "Accept", "User-Agent"):
-                v = self.headers.get(k)
-                if v:
-                    fwd_headers[k] = v
-            fwd_headers.setdefault("Content-Type", "application/json")
-            fwd_headers.setdefault("User-Agent", "codex-cli")
-
-            req = urllib.request.Request(
-                target_url, data=raw_body, headers=fwd_headers, method="POST"
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=600) as resp:
-                    self.send_response(resp.status)
-                    ct = resp.headers.get("Content-Type")
-                    if ct:
-                        self.send_header("Content-Type", ct)
-                    self.end_headers()
-                    while True:
-                        chunk = resp.read(4096)
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
-                        self.wfile.flush()
-            except urllib.error.HTTPError as err:
-                err_body = err.read()
-                self.send_response(err.code)
-                ct = err.headers.get("Content-Type") if err.headers else None
-                if ct:
-                    self.send_header("Content-Type", ct)
-                self.end_headers()
-                if err_body:
-                    self.wfile.write(err_body)
-            except Exception as exc:
-                msg = json.dumps({"error": {"message": str(exc)}}).encode("utf-8")
-                self.send_response(502)
-                self.send_header("Content-Type", "application/json")
-                self.end_headers()
-                self.wfile.write(msg)
-
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), ProxyHandler)
-    port = srv.server_port
-    threading.Thread(target=srv.serve_forever, daemon=True).start()
-
-    override = f'model_providers.{provider}.base_url="http://127.0.0.1:{port}/v1"'
-    cmd = [str(REAL_BIN), "exec", "-c", override, *args[1:]]
-    try:
-        return subprocess.call(cmd)
-    finally:
-        srv.shutdown()
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-"""
-
-
-def write_codex_launcher(dest: Path | None = None) -> None:
-    """Install the transparent tools-normalizing launcher at `<CODEX_DIST>/codex`."""
-    dist = Path(dest or config.CODEX_DIST)
-    if not (dist / "bin" / "codex").is_file():
-        return
-    binary = dist / "codex"
-    if binary.is_symlink() or binary.is_file():
-        binary.unlink()
-    binary.write_text(CODEX_LAUNCHER_SCRIPT, encoding="utf-8")
-    binary.chmod(0o755)
-
-
-def codex(*, dry_run=False):
-    root = config.DEPENDENCIES / "codex"
-    run(
-        ["npm", "install", "--prefix", root, f"@openai/codex@{config.CODEX_VERSION}"],
-        dry_run=dry_run,
-    )
-    if not dry_run:
-        candidates = list((root / "node_modules" / "@openai").glob("**/bin/codex"))
-        if len(candidates) != 1:
-            raise RuntimeError(
-                f"Expected one native Codex binary in {root}; found {len(candidates)}"
-            )
-        dest = Path(config.CODEX_DIST)
-        platform = candidates[0].parent.parent
-        shutil.copytree(platform, dest, dirs_exist_ok=True)
-        write_codex_launcher(dest)
-        _share_with_containers(dest)
-    configure_codex(dry_run=dry_run)
-
-
 def _share_with_containers(root: Path) -> None:
     """Make the staged dist readable by the container user it is bind-mounted for.
 
     The copy inherits the installing shell's umask, and under a private one (077) the
-    WorkBuddy agent, which runs as a different user, cannot open /opt/codex at all.
+    WorkBuddy agent, which runs as a different user, cannot open mounts at all.
     """
     for path in (root, *root.rglob("*")):
         mode = path.lstat().st_mode
@@ -409,227 +206,6 @@ def _share_with_containers(root: Path) -> None:
         if stat.S_ISDIR(mode) or mode & stat.S_IXUSR:
             extra |= stat.S_IXGRP | stat.S_IXOTH
         path.chmod(mode | extra)
-
-
-CODEX_CONFIG_REMEDY = "rerun harness2-setup <bench> --substrate cx"
-CODEX_PROVIDER = "sec_agent_harness2"
-
-
-def configure_codex(*, dry_run=False, home_dir: Path | None = None):
-    # Ensure bridge config and wire_mode are resolved if needed
-    wire_mode = os.environ.get("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE", "")
-    bridge_file = config.DEPENDENCIES / "codex" / "responses-bridge.json"
-    if not wire_mode and bridge_file.is_file():
-        try:
-            bridge_data = json.loads(bridge_file.read_text(encoding="utf-8"))
-            wire_mode = bridge_data.get("wire_mode", "")
-        except Exception:
-            pass
-
-    if not wire_mode:
-        up_url = (
-            os.environ.get("SEC_AGENT_HARNESS2_CODEX_BASE_URL")
-            or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL")
-            or config.API_BASE_URL
-        )
-        up_key = (
-            os.environ.get("SEC_AGENT_HARNESS2_CODEX_API_KEY")
-            or os.environ.get("SEC_AGENT_HARNESS2_API_KEY")
-            or config.API_KEY
-        )
-        if up_url:
-            try:
-                probe_res = api.probe_upstream_responses_capability(up_url, up_key)
-                wire_mode = probe_res.get("wire_mode", "bridge")
-            except Exception:
-                wire_mode = "bridge"
-            bridge_file.parent.mkdir(parents=True, exist_ok=True)
-            from .cli.responses_bridge import _endpoint
-
-            ep_dict = _endpoint(bridge_file)
-            ep_dict["wire_mode"] = wire_mode
-            bridge_file.write_text(json.dumps(ep_dict, indent=2) + "\n", encoding="utf-8")
-            bridge_file.chmod(0o600)
-
-    endpoint = api.codex()
-    if endpoint is None or not endpoint.base_url:
-        raise config.ConfigError(
-            "SEC_AGENT_HARNESS2_CODEX_BASE_URL (or SEC_AGENT_HARNESS2_API_BASE_URL) is required for Codex setup; "
-            "see .env.example"
-        )
-    body = (
-        f"model = {json.dumps(config.SOLVER_MODEL_CX)}\n"
-        f"model_provider = {json.dumps(CODEX_PROVIDER)}\n"
-        f'[model_providers.{CODEX_PROVIDER}]\nname = "Configured Responses endpoint"\n'
-        f"base_url = {json.dumps(endpoint.base_url)}\n"
-        'wire_api = "responses"\nenv_key = "VERTEX_PROXY_KEY"\n'
-    )
-    target_home = home_dir or config.CODEX_HOME_DIR
-    if not dry_run:
-        target_home.mkdir(parents=True, exist_ok=True)
-        (target_home / "config.toml").write_text(body, encoding="utf-8")
-        if target_home == config.CODEX_HOME_DIR:
-            write_codex_launcher()
-
-
-def _is_same_bridge_endpoint(found: str | None, want: str | None) -> bool:
-    if found == want:
-        return True
-    if not found or not want:
-        return False
-    from urllib.parse import urlparse
-
-    try:
-        p_found = urlparse(found.rstrip("/"))
-        p_want = urlparse(want.rstrip("/"))
-        if (
-            p_found.scheme == p_want.scheme
-            and (p_found.port or 80) == (p_want.port or 80)
-            and p_found.path.rstrip("/") == p_want.path.rstrip("/")
-            and p_found.hostname in ("127.0.0.1", "0.0.0.0", "localhost")
-            and p_want.hostname in ("127.0.0.1", "0.0.0.0", "localhost")
-        ):
-            return True
-    except Exception:
-        pass
-    return False
-
-
-def codex_config_error(*, home_dir: Path | None = None) -> str | None:
-    """Why `CODEX_HOME/config.toml` no longer matches the live Codex configuration.
-
-    `configure_codex` bakes the endpoint and the model into a file that the Codex CLI
-    reads at rollout time. In bridge mode, the deterministic bridge endpoint (:8765)
-    remains stable across upstream model switches. Returns None when the file agrees
-    with the environment, else a message naming the remedy.
-    """
-    target_home = home_dir or config.CODEX_HOME_DIR
-    path = target_home / "config.toml"
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-    except OSError:
-        return (
-            f"CODEX_HOME has no readable config.toml: {path} -- the configured provider "
-            f"block there routes Codex to your Responses endpoint; {CODEX_CONFIG_REMEDY}"
-        )
-    except tomllib.TOMLDecodeError as exc:
-        return f"{path} is not valid TOML ({exc}); {CODEX_CONFIG_REMEDY}"
-    provider = data.get("model_provider")
-    block = (data.get("model_providers") or {}).get(provider) or {}
-    endpoint = api.codex()
-    want_url = endpoint.base_url if endpoint is not None else config.CODEX_BASE_URL
-    found_url = block.get("base_url")
-
-    stale = []
-    if not _is_same_bridge_endpoint(found_url, want_url):
-        stale.append(f"base_url is {found_url!r}, configuration says {want_url!r}")
-    found_model = data.get("model")
-    if found_model != config.SOLVER_MODEL_CX:
-        stale.append(f"model is {found_model!r}, configuration says {config.SOLVER_MODEL_CX!r}")
-
-    if stale:
-        return f"{path} is stale ({'; '.join(stale)}); {CODEX_CONFIG_REMEDY}"
-    return None
-
-
-def claude(*, dry_run=False):
-    root = config.DEPENDENCIES / "claude"
-    if dry_run:
-        print(f"Install Claude Code (clawgod) runtime in {root}", flush=True)
-        return
-    root.mkdir(parents=True, exist_ok=True)
-    # 1. Install dedicated isolated Bun >= 1.3.14 inside dependencies/claude
-    run(["npm", "install", "--prefix", root, "bun@1.3.14"], dry_run=dry_run)
-
-    # 2. Extract or copy clawgod runtime
-    host_clawgod = Path.home() / ".clawgod"
-    if (host_clawgod / "cli.cjs").is_file():
-        print(f"Cloning local clawgod runtime from {host_clawgod} into {root}...", flush=True)
-        for item in (
-            "cli.cjs",
-            "cli.original.cjs",
-            "bun-ant-shim.cjs",
-            "runtime-helpers.cjs",
-            "feature-gates.cjs",
-            "openai-proxy.cjs",
-            "startup-check.cjs",
-            "features.json",
-            ".clawgod-version",
-            ".source-version",
-        ):
-            src_f = host_clawgod / item
-            if src_f.is_file():
-                shutil.copy2(src_f, root / item)
-        # NOTE: provider.json is deliberately NOT cloned: it may carry the user's API
-        # key. cli.cjs auto-creates an empty default on first run; credentials then
-        # come from the environment (see ClaudeSubstrate.exec_env).
-        # Same for patches.json: host customisations must not leak into the pinned
-        # runtime; start from all-gates-default.
-        if not (root / "patches.json").is_file():
-            (root / "patches.json").write_text("{}\n", encoding="utf-8")
-
-        for folder in ("bunfs", "vendor"):
-            src_d = host_clawgod / folder
-            if src_d.is_dir():
-                shutil.copytree(src_d, root / folder, dirs_exist_ok=True)
-        # source-backup.json records the exact upstream bundle this pin came from
-        # (used for provenance, not at runtime).
-        for item in ("source-backup.json",):
-            src_f = host_clawgod / item
-            if src_f.is_file():
-                shutil.copy2(src_f, root / item)
-
-        # Path relocation / decoupling from ~/.clawgod
-        cli_cjs = root / "cli.cjs"
-        if cli_cjs.is_file():
-            txt = cli_cjs.read_text(encoding="utf-8")
-            txt = txt.replace("const clawgodDir = join(homedir(), '.clawgod');", "const clawgodDir = __dirname;")
-            cli_cjs.write_text(txt, encoding="utf-8")
-
-        fg_cjs = root / "feature-gates.cjs"
-        if fg_cjs.is_file():
-            txt = fg_cjs.read_text(encoding="utf-8")
-            txt = txt.replace(
-                "var clawgodDir = require('path').join(require('os').homedir(), '.clawgod');",
-                "var clawgodDir = __dirname;",
-            )
-            fg_cjs.write_text(txt, encoding="utf-8")
-
-        old_bytes = str(host_clawgod.resolve()).encode("utf-8")
-        new_bytes = str(root.resolve()).encode("utf-8")
-        for p in root.rglob("*"):
-            if p.is_file() and p.suffix in (".js", ".cjs", ".json"):
-                b = p.read_bytes()
-                if old_bytes in b:
-                    p.write_bytes(b.replace(old_bytes, new_bytes))
-    else:
-        print(f"Downloading clawgod distribution into {root}...", flush=True)
-        installer = (
-            f'CLAWGOD_DIR="{root}" BIN_DIR="{root}/bin" NO_UPGRADE=0 '
-            'curl -fsSL https://github.com/0Chencc/clawgod/releases/latest/download/install.sh | '
-            f'sed -e "s|CLAWGOD_DIR=.*|CLAWGOD_DIR=\\"{root}\\"|g" '
-            f'-e "s|BIN_DIR=.*|BIN_DIR=\\"{root}/bin\\"|g" | bash'
-        )
-        run(["bash", "-c", installer], dry_run=dry_run)
-
-    # 3. Create standalone launcher script
-    bin_dir = root / "bin"
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    launcher = bin_dir / "clawgod"
-    launcher_content = (
-        "#!/bin/bash\n"
-        'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"\n'
-        'BUN_BIN="$DIR/node_modules/.bin/bun"\n'
-        'CLI="$DIR/cli.cjs"\n'
-        'if [ ! -x "$BUN_BIN" ]; then\n'
-        '    echo "Isolated bun not found at $BUN_BIN; run harness2 setup --substrate claude" >&2\n'
-        "    exit 1\n"
-        "fi\n"
-        'exec "$BUN_BIN" "$CLI" "$@"\n'
-    )
-    launcher.write_text(launcher_content, encoding="utf-8")
-    launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    print(f"Claude Code (clawgod) installed successfully at {launcher}", flush=True)
 
 
 def configure_pi(*, dry_run=False, agent_dir: Path | None = None):
@@ -646,9 +222,9 @@ def configure_pi(*, dry_run=False, agent_dir: Path | None = None):
 
 
 def pi(*, dry_run=False):
-    """Install `@mariozechner/pi-coding-agent` pinned at `config.PI_VERSION` under `dependencies/pi`."""
+    """Install `@earendil-works/pi-coding-agent` pinned at `config.PI_VERSION` under `dependencies/pi`."""
     root = config.PI_DIST
-    pkg = f"@mariozechner/pi-coding-agent@{config.PI_VERSION}"
+    pkg = f"@earendil-works/pi-coding-agent@{config.PI_VERSION}"
     if dry_run:
         print(f"Install Pi Coding Agent ({pkg}) runtime in {root}", flush=True)
         return

@@ -7,14 +7,12 @@ What is still vendored here:
 
 | Path | Origin |
 |---|---|
-| `run_benchmark_codex_cli_adapt.sh` | Upstream `eval/run_benchmark_codex_cli.sh`, kept close to the original |
-| `codex_base_harness/AGENTS.md` | Upstream Codex baseline harness |
 | `harness_baseline_oc/` | Upstream OpenCode baseline harness tree |
+| `run_benchmark_pi_cli_adapt.sh` | Pi Coding Agent runner adaptation |
 
 The integration adds editable harness installation and configurable models,
 paths, and endpoints. Local model-provider names, environment variables, and
-log paths use the `harness2` namespace. The adapter invokes the Codex launcher
-directly from the package.
+log paths use the `harness2` namespace.
 
 The OpenCode launcher that used to sit beside it,
 `run_benchmark_opencode_harness_adapt.sh`, was a fork that shared almost nothing

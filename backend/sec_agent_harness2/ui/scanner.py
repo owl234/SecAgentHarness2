@@ -78,7 +78,7 @@ def infer_run_cell(runs_root: Path, run_id: str) -> dict[str, Any]:
 
     # Match <bench>[-<subset>]-<substrate>-(agg|seq)<k>[-s<seed>]
     m = re.match(
-        r"^(?P<bprefix>jb|lab|wb(?:-(?:office|web|code))?|demo)-(?P<sub>oc|cx|claude|pi)-(?P<mode>agg|seq)(?P<k>\d+)(?:-s(?P<seed>\d+))?",
+        r"^(?P<bprefix>jb|lab|wb(?:-(?:office|web|code))?|demo)-(?P<sub>oc|pi)-(?P<mode>agg|seq)(?P<k>\d+)(?:-s(?P<seed>\d+))?",
         base_id,
     )
     if m:
@@ -852,7 +852,7 @@ def _build_pipeline_graph(
 
 def _map_rel_path_to_category(path_str: str) -> str:
     norm = path_str.replace("\\", "/")
-    if norm in ("systemprompt.md", "AGENTS.md", "CLAUDE.md"):
+    if norm in ("systemprompt.md", "AGENTS.md"):
         return "c1"
     if norm == "guardrails.md" or norm.startswith("guardrails/"):
         return "c2"
@@ -862,11 +862,11 @@ def _map_rel_path_to_category(path_str: str) -> str:
         return "c4"
     if norm.startswith("sub_agents"):
         return "c5"
-    if norm.startswith(("skills", ".agents/skills", ".claude/skills", ".pi/skills")):
+    if norm.startswith(("skills", ".agents/skills", ".pi/skills")):
         return "c6"
     if norm.startswith("scripts"):
         return "c7"
-    if norm.startswith(("plugin", ".pi/extensions")) or norm in (".codex/hooks.json", ".claude/settings.json", ".pi/hooks.json"):
+    if norm.startswith(("plugin", ".pi/extensions")) or norm == ".pi/hooks.json":
         return "c8"
     if norm.startswith("mcp") or norm == ".mcp.json":
         return "c9"
@@ -1055,7 +1055,7 @@ def get_harness_diff(
     }
 
     def _map_comp(path_str: str) -> str:
-        if path_str in ("systemprompt.md", "AGENTS.md", "CLAUDE.md"):
+        if path_str in ("systemprompt.md", "AGENTS.md"):
             return "systemprompt"
         if path_str == "guardrails.md":
             return "guardrails"
@@ -1065,11 +1065,11 @@ def get_harness_diff(
             return "tools"
         if path_str.startswith("scripts"):
             return "scripts"
-        if path_str.startswith(("skills", ".agents/skills", ".claude/skills", ".pi/skills")):
+        if path_str.startswith(("skills", ".agents/skills", ".pi/skills")):
             return "skills"
         if path_str.startswith("sub_agents"):
             return "subagents"
-        if path_str.startswith(("plugin", ".pi/extensions")) or path_str in (".codex/hooks.json", ".claude/settings.json", ".pi/hooks.json"):
+        if path_str.startswith(("plugin", ".pi/extensions")) or path_str == ".pi/hooks.json":
             return "plugins"
         if path_str.startswith("mcp") or path_str == ".mcp.json":
             return "mcp"
@@ -1196,26 +1196,15 @@ def get_preflight_status(workspace_root: Path) -> dict[str, Any]:
             docker_msg = "Docker 检查超时或失败"
 
     project = config.VERTEX_PROJECT
-    solver_model = (
-        config.SOLVER_MODEL_OC
-        or config.SOLVER_MODEL_CLAUDE
-        or config.SOLVER_MODEL_CX
-        or config.SOLVER_MODEL_PI
-    )
+    solver_model = config.SOLVER_MODEL_OC or config.SOLVER_MODEL_PI
     judge_model = config.JUDGE_MODEL
-    ep_claude = api.claude()
     ep_oc = api.opencode()
-    ep_cx = api.codex()
     ep_pi = api.pi()
     has_unified = bool(config.API_BASE_URL and config.API_KEY)
     has_any_endpoint = bool(
         has_unified
-        or (ep_claude and ep_claude.api_key)
         or (ep_oc and ep_oc.api_key)
-        or (ep_cx and ep_cx.api_key)
         or (ep_pi and ep_pi.api_key)
-        or os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
         or os.environ.get("OPENAI_API_KEY")
     )
 
@@ -1227,7 +1216,7 @@ def get_preflight_status(workspace_root: Path) -> dict[str, Any]:
         )
     elif has_credentials:
         cred_msg = (
-            f"已就绪 (Endpoint/Project: {project or (ep_claude.base_url if ep_claude else '已配置')}, "
+            f"已就绪 (Endpoint/Project: {project or (ep_pi.base_url if ep_pi else (ep_oc.base_url if ep_oc else '已配置'))}, "
             f"Model: {solver_model or '已设置'})"
         )
     else:
@@ -1854,17 +1843,12 @@ def sync_config_from_env() -> None:
     config.API_KEY = config.env("SEC_AGENT_HARNESS2_API_KEY", "")
     config.API_MODEL = config.env("SEC_AGENT_HARNESS2_API_MODEL", "")
     config.SOLVER_MODEL_OC = config._solver_model_oc()
-    config.SOLVER_MODEL_CX = config.env(
-        "SEC_AGENT_HARNESS2_CODEX_MODEL", config.SOLVER_MODEL_OC.removeprefix("sec_agent_harness2/")
-    )
-    config.SOLVER_MODEL_CLAUDE = config.env(
-        "SEC_AGENT_HARNESS2_CLAUDE_MODEL", config.API_MODEL or "claude-3-7-sonnet-20250219"
-    )
+    config.SOLVER_MODEL_PI = config._solver_model_pi()
     config.IMPROVER_MODEL = config.env("SEC_AGENT_HARNESS2_IMPROVER_MODEL", config.SOLVER_MODEL_OC)
     config.JUDGE_MODEL = config.env("SEC_AGENT_HARNESS2_JUDGE_MODEL", config.API_MODEL)
     config.PROPOSER_MODEL_BY_CHANNEL = {
         "opencode": config.IMPROVER_MODEL,
-        "claude_cli": config.IMPROVER_MODEL,
+        "pi": config.IMPROVER_MODEL,
     }
     vertex_host = (
         "aiplatform.googleapis.com"
@@ -1885,7 +1869,7 @@ def sync_config_from_env() -> None:
     )
     config.LAB_JUDGE_MODEL = (
         "vertex/" + config.JUDGE_MODEL
-        if config.JUDGE_MODEL.startswith(("claude", "gemini"))
+        if config.JUDGE_MODEL.startswith("gemini")
         else config.JUDGE_MODEL
     )
     config.JB_JUDGE_MODEL = (
@@ -1893,9 +1877,6 @@ def sync_config_from_env() -> None:
         if config.JUDGE_MODEL.startswith("gemini") and not config.env("SEC_AGENT_HARNESS2_JUDGE_BASE_URL")
         else config.JUDGE_MODEL
     )
-    config.CODEX_BASE_URL = config.env("SEC_AGENT_HARNESS2_CODEX_BASE_URL", config.API_BASE_URL)
-    config.CODEX_CONTAINER_URL = config.env("SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL", config.CODEX_BASE_URL)
-    config.VERTEX_PROXY_KEY = config.env("SEC_AGENT_HARNESS2_CODEX_API_KEY", config.API_KEY)
 
 
 def persist_env_updates(
@@ -1973,70 +1954,7 @@ def persist_env_updates(
         synced_files.append(".env")
 
     # Sync derived files when operating on the repository workspace:
-    # 0. Probe and persist Codex wire mode if Unified API was updated without explicit WIRE_MODE override
-    if ("SEC_AGENT_HARNESS2_API_BASE_URL" in applied or "SEC_AGENT_HARNESS2_API_KEY" in applied or "SEC_AGENT_HARNESS2_CODEX_BASE_URL" in applied) and not os.environ.get("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE"):
-        up_url = (os.environ.get("SEC_AGENT_HARNESS2_CODEX_BASE_URL") or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", "")).strip()
-        up_key = (os.environ.get("SEC_AGENT_HARNESS2_CODEX_API_KEY") or os.environ.get("SEC_AGENT_HARNESS2_API_KEY", "")).strip()
-        if up_url and up_key:
-            try:
-                probe_res = api.probe_upstream_responses_capability(up_url, up_key, timeout=3.0)
-                bridge_json = workspace_root / "dependencies" / "codex" / "responses-bridge.json"
-                cur = _safe_read_json(bridge_json) or {}
-                cur["wire_mode"] = probe_res.get("wire_mode", "bridge")
-                if "port" not in cur:
-                    cur["port"] = 8765
-                if "key" not in cur:
-                    import secrets
-
-                    cur["key"] = secrets.token_urlsafe(24)
-                cur["host"] = cur.get("host", "0.0.0.0")
-                bridge_json.parent.mkdir(parents=True, exist_ok=True)
-                bridge_json.write_text(json.dumps(cur, indent=2) + "\n", encoding="utf-8")
-                bridge_json.chmod(0o600)
-            except Exception:
-                pass
-
-    # 1. Codex home/config.toml when Codex endpoint is present
-    ep_cx = api.codex()
-    if ep_cx is not None and ep_cx.base_url:
-        try:
-            target_codex_home = workspace_root / "dependencies" / "codex" / "home"
-            install.configure_codex(dry_run=False, home_dir=target_codex_home)
-            toml_file = target_codex_home / "config.toml"
-            if toml_file.is_file():
-                try:
-                    synced_files.append(str(toml_file.relative_to(workspace_root)))
-                except ValueError:
-                    synced_files.append("dependencies/codex/home/config.toml")
-        except Exception:
-            pass
-
-    # 2. Claude clawgod provider.json when protocol is openai-chat (or reset when anthropic)
-    claude_dir = workspace_root / "dependencies" / "claude"
-    ep_cl = api.claude()
-    if claude_dir.is_dir() or (workspace_root / "dependencies").is_dir():
-        prov_file = claude_dir / "provider.json"
-        try:
-            if ep_cl is not None and ep_cl.protocol == "openai-chat":
-                claude_dir.mkdir(parents=True, exist_ok=True)
-                prov_file.write_text(api.claude_provider_json(ep_cl), encoding="utf-8")
-                prov_file.chmod(0o600)
-                try:
-                    synced_files.append(str(prov_file.relative_to(workspace_root)))
-                except ValueError:
-                    synced_files.append("dependencies/claude/provider.json")
-            elif prov_file.is_file():
-                cur = _safe_read_json(prov_file) or {}
-                if cur.get("protocol") == "openai-chat":
-                    prov_file.write_text("{}\n", encoding="utf-8")
-                    try:
-                        synced_files.append(str(prov_file.relative_to(workspace_root)))
-                    except ValueError:
-                        synced_files.append("dependencies/claude/provider.json")
-        except Exception:
-            pass
-
-    # 3. Pi models.json when Pi endpoint is present
+    # Pi models.json when Pi endpoint is present
     pi_agent_dir = workspace_root / "dependencies" / "pi" / "agent"
     ep_pi = api.pi()
     if ep_pi is not None and (pi_agent_dir.is_dir() or (workspace_root / "dependencies").is_dir()):
@@ -2056,47 +1974,19 @@ def persist_env_updates(
 
 def get_bridge_status(workspace_root: Path, managed_info: dict[str, Any] | None = None) -> dict[str, Any]:
     """Check whether the local Responses Bridge is running and return its connection details."""
-    import urllib.request
-
-    bridge_json = workspace_root / "dependencies" / "codex" / "responses-bridge.json"
-    saved = _safe_read_json(bridge_json) or {}
-    port = (managed_info or {}).get("port") or saved.get("port") or 8765
-    host = (managed_info or {}).get("host") or saved.get("host") or "0.0.0.0"
-    key = saved.get("key") or ""
-    wire_mode = os.environ.get("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE") or saved.get("wire_mode", "bridge")
-    upstream = (managed_info or {}).get("upstream") or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", "")
-    running = False
-
-    if port:
-        probe_host = "127.0.0.1" if host in ("0.0.0.0", "127.0.0.1", "localhost") else host
-        health_url = f"http://{probe_host}:{port}/healthz"
-        try:
-            req = urllib.request.Request(health_url, method="GET")
-            with urllib.request.urlopen(req, timeout=0.6) as resp:
-                if resp.status == 200:
-                    running = True
-                    data = json.loads(resp.read().decode("utf-8", errors="replace"))
-                    if data.get("upstream"):
-                        upstream = str(data["upstream"]).removesuffix("/chat/completions")
-        except Exception:
-            running = bool(managed_info and managed_info.get("running"))
-
-    local_url = f"http://127.0.0.1:{port}/v1" if port else ""
-    container_url = f"http://host.docker.internal:{port}/v1" if port else ""
-    key_masked = (key[:4] + "..." + key[-4:]) if len(key) >= 8 else ("***" if key else "")
     return {
-        "running": running,
-        "port": port,
-        "host": host,
-        "upstream": upstream,
-        "wire_mode": wire_mode,
-        "local_url": local_url,
-        "container_url": container_url,
-        "auth_enabled": True,
-        "key_configured": bool(key),
-        "local_key": key,
-        "local_key_masked": key_masked,
-        "managed": bool(managed_info and managed_info.get("running")),
+        "running": False,
+        "port": 0,
+        "host": "127.0.0.1",
+        "upstream": os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", ""),
+        "wire_mode": "direct",
+        "local_url": "",
+        "container_url": "",
+        "auth_enabled": False,
+        "key_configured": False,
+        "local_key": "",
+        "local_key_masked": "",
+        "managed": False,
     }
 
 
@@ -2119,18 +2009,10 @@ def probe_executor_endpoint(
     sync_config_from_env()
 
     ep: api.Endpoint | None = None
-    if target == "claude":
-        ep = api.claude()
-        default_proto = "anthropic"
-        default_model = config.SOLVER_MODEL_CLAUDE
-    elif target == "oc":
+    if target == "oc":
         ep = api.opencode()
         default_proto = "openai-chat"
         default_model = config.SOLVER_MODEL_OC
-    elif target == "cx":
-        ep = api.codex()
-        default_proto = "openai-responses"
-        default_model = config.SOLVER_MODEL_CX
     elif target == "pi":
         ep = api.pi()
         default_proto = "openai-chat"
@@ -2161,22 +2043,13 @@ def probe_executor_endpoint(
 
     eff_url = (base_url if base_url is not None else (ep.base_url if ep else "")).strip()
     eff_key = (api_key if api_key is not None and api_key.strip() else (ep.api_key if ep else "")).strip()
-    if not eff_key and target == "claude":
-        eff_key = (
-            os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_API_KEY")
-            or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-            or os.environ.get("ANTHROPIC_API_KEY", "")
-        ).strip()
-    elif not eff_key and target == "pi":
+    if not eff_key and target == "pi":
         eff_key = (
             os.environ.get("SEC_AGENT_HARNESS2_PI_API_KEY")
             or os.environ.get("OPENAI_API_KEY", "")
         ).strip()
     eff_proto = (protocol if protocol else (ep.protocol if ep else default_proto)).strip() or default_proto
     eff_model = (model if model else (ep.model if ep else default_model)).strip() or default_model
-
-    if not eff_url and target == "claude" and eff_key:
-        eff_url = "https://api.anthropic.com"
 
     if not eff_url:
         return {
@@ -2231,7 +2104,7 @@ def probe_executor_endpoint(
                     msg_url,
                     "POST",
                     body={
-                        "model": bare_model or "claude-3-7-sonnet-20250219",
+                        "model": bare_model or "gpt-4o",
                         "max_tokens": 1,
                         "messages": [{"role": "user", "content": "ping"}],
                     },
@@ -2480,8 +2353,7 @@ def get_executors_status(
 ) -> dict[str, Any]:
     """Inspect and return detailed ground-truth status of Unified API and all supported executors."""
     sync_config_from_env()
-    from .. import api, config, install
-    from ..substrate.claude import find_claude_binary
+    from .. import api, config
 
     # 0. Unified API & Bridge inspection
     unified_base_url = os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", "")
@@ -2489,50 +2361,14 @@ def get_executors_status(
     unified_model = (
         os.environ.get("SEC_AGENT_HARNESS2_API_MODEL", "")
         or config.API_MODEL
-        or config.SOLVER_MODEL_CX
         or (config.SOLVER_MODEL_OC.removeprefix("sec_agent_harness2/") if config.SOLVER_MODEL_OC else "")
     )
     unified_protocol = os.environ.get("SEC_AGENT_HARNESS2_API_PROTOCOL", "")
     bridge_info = get_bridge_status(workspace_root, managed_bridge)
 
-    # 1. Claude Code (clawgod) inspection
-    claude_binary_path = find_claude_binary()
-    claude_cli_ok = claude_binary_path.is_file() and os.access(claude_binary_path, os.X_OK)
-    claude_bin = str(claude_binary_path) if claude_cli_ok else ""
-    ep_claude = api.claude()
-    claude_raw_key = (
-        os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_API_KEY")
-        or os.environ.get("ANTHROPIC_AUTH_TOKEN")
-        or os.environ.get("ANTHROPIC_API_KEY", "")
-    )
-    claude_has_key = bool((ep_claude and ep_claude.api_key) or claude_raw_key)
-    claude_model = config.SOLVER_MODEL_CLAUDE
-    claude_model_override = os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_MODEL", "")
-    claude_effort = os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_EFFORT", "high") or "high"
-    claude_base_override = os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_BASE_URL") or os.environ.get("ANTHROPIC_BASE_URL", "")
-    claude_proto_override = os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_PROTOCOL", "")
-    claude_effective_proto = ep_claude.protocol if ep_claude else (claude_proto_override or "anthropic")
-    claude_using_unified = bool(unified_base_url and not os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_BASE_URL"))
-
-    if claude_cli_ok and claude_has_key:
-        claude_status = "ready"
-        claude_msg = (
-            f"clawgod {config.CLAUDE_VERSION} 已就绪 · 协议 {claude_effective_proto} · "
-            f"{'复用统一 API' if claude_using_unified else (ep_claude.base_url if ep_claude else 'Anthropic 官方端点')}"
-        )
-    elif not claude_cli_ok:
-        claude_status = "missing_deps"
-        claude_msg = (
-            f"未检测到项目级 clawgod 运行时 ({_safe_rel(config.CLAUDE_BIN, workspace_root)})；"
-            "请运行 harness2 setup <bench> --substrate claude 安装"
-        )
-    else:
-        claude_status = "needs_config"
-        claude_msg = "clawgod CLI 已就绪，待配置统一 API (SEC_AGENT_HARNESS2_API_*) 或 ANTHROPIC_API_KEY"
-
-    # 2. OpenCode (oc) Substrate inspection
+    # 1. OpenCode (oc) Substrate inspection
     opencode_dir = workspace_root / "dependencies" / "opencode"
-    oc_entry = opencode_dir / "packages" / "opencode" / "src" / "index.ts"
+    oc_entry = opencode_dir / "packages" / "cli" / "src" / "index.ts"
     bun_bin_path = config.BUN if config.BUN.is_file() else Path(shutil.which("bun") or "")
     bun_ok = bool(bun_bin_path and bun_bin_path.is_file())
     oc_cli_ok = oc_entry.is_file() and bun_ok
@@ -2560,40 +2396,7 @@ def get_executors_status(
         oc_status = "needs_config"
         oc_msg = "OpenCode 运行时已就绪，需配置统一 API 或 SEC_AGENT_HARNESS2_SOLVER_MODEL"
 
-    # 3. Codex (cx) Substrate inspection
-    codex_bin_path = Path(config.CODEX_DIST) / "codex"
-    cx_cli_ok = codex_bin_path.is_file() and os.access(codex_bin_path, os.X_OK)
-    ep_cx = api.codex()
-    cx_has_key = bool(ep_cx and ep_cx.api_key)
-    cx_model = config.SOLVER_MODEL_CX
-    cx_model_override = os.environ.get("SEC_AGENT_HARNESS2_CODEX_MODEL", "")
-    cx_base_override = os.environ.get("SEC_AGENT_HARNESS2_CODEX_BASE_URL", "")
-    cx_container_url = os.environ.get("SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL", "")
-    cx_using_unified = bool(unified_base_url and not cx_base_override)
-    toml_err = install.codex_config_error() if (cx_cli_ok or (ep_cx and ep_cx.base_url)) else "not configured"
-
-    if cx_cli_ok and cx_has_key and toml_err is None:
-        cx_status = "ready"
-        cx_msg = (
-            f"Codex {config.CODEX_VERSION} 与 config.toml 已同步 · "
-            f"Responses 端点: {ep_cx.base_url if ep_cx else ''}"
-            + (" (转换桥运行中)" if bridge_info["running"] else "")
-        )
-    elif not cx_cli_ok:
-        cx_status = "missing_deps"
-        cx_msg = (
-            f"未安装 Codex 分发包 ({_safe_rel(codex_bin_path, workspace_root)})；"
-            "请运行 harness2 setup <bench> --substrate cx"
-        )
-    else:
-        cx_status = "needs_config"
-        cx_msg = (
-            f"需配置 Responses API 端点或启动内置转换桥 ({toml_err})"
-            if toml_err
-            else "待配置 SEC_AGENT_HARNESS2_CODEX_BASE_URL / API_KEY"
-        )
-
-    # 4. Pi Coding Agent (pi) Substrate inspection
+    # 2. Pi Coding Agent (pi) Substrate inspection
     from ..substrate.pi import find_pi_binary
 
     pi_bin_path = find_pi_binary()
@@ -2626,7 +2429,7 @@ def get_executors_status(
         pi_status = "needs_config"
         pi_msg = "Pi CLI 已就绪，待配置统一 API (SEC_AGENT_HARNESS2_API_*) 或 SEC_AGENT_HARNESS2_PI_*"
 
-    # 5. Improver, Judge & Vertex AI inspection
+    # 3. Improver, Judge & Vertex AI inspection
     improver_override = os.environ.get("SEC_AGENT_HARNESS2_IMPROVER_MODEL", "")
     judge_model = config.JUDGE_MODEL
     judge_base_override = os.environ.get("SEC_AGENT_HARNESS2_JUDGE_BASE_URL", "")
@@ -2643,7 +2446,7 @@ def get_executors_status(
     return {
         "active_executor": os.environ.get(
             "SEC_AGENT_HARNESS2_DEFAULT_EXECUTOR",
-            "claude" if (claude_cli_ok and claude_has_key) else ("pi" if (pi_cli_ok and pi_has_key) else "oc"),
+            "pi" if (pi_cli_ok and pi_has_key) else "oc",
         ),
         "unified_config": {
             "base_url": unified_base_url,
@@ -2663,43 +2466,9 @@ def get_executors_status(
         "bridge": bridge_info,
         "executors": [
             {
-                "id": "claude",
-                "name": "Claude Code (clawgod)",
-                "title": f"Claude Code 执行基座 (clawgod {config.CLAUDE_VERSION})",
-                "category": "substrate",
-                "status": claude_status,
-                "status_message": claude_msg,
-                "cli_available": claude_cli_ok,
-                "cli_path": claude_bin,
-                "api_key_configured": claude_has_key,
-                "api_key_masked": _mask_secret(claude_raw_key or (ep_claude.api_key if ep_claude else "")),
-                "current_model": claude_model,
-                "model_override": claude_model_override,
-                "effort": claude_effort,
-                "base_url": claude_base_override,
-                "effective_base_url": ep_claude.base_url if ep_claude else "https://api.anthropic.com",
-                "protocol": claude_effective_proto,
-                "protocol_override": claude_proto_override,
-                "using_unified": claude_using_unified,
-                "resolved_endpoint": api.describe(ep_claude),
-                "supported_models": [
-                    "claude-sonnet-4-6",
-                    "claude-opus-4-6",
-                    "claude-3-7-sonnet-20250219",
-                    "claude-3-5-sonnet-20241022",
-                    "claude-3-5-haiku-20241022",
-                ],
-                "capabilities": [
-                    "原生 CLAUDE.md + .claude/skills + settings.json 钩子表面",
-                    "支持 --effort (low / medium / high) 推理强度控制",
-                    "支持原生 Anthropic Messages 与 clawgod openai-chat 双协议",
-                    "自动将 sub_agents/*/AGENT.md 桥接为 --agents 委托代理",
-                ],
-            },
-            {
                 "id": "oc",
                 "name": "OpenCode (oc)",
-                "title": "OpenCode 原生执行基座 (v1.14.18)",
+                "title": f"OpenCode 原生执行基座 (v{config.WB_OC_HARNESS_VER})",
                 "category": "substrate",
                 "status": oc_status,
                 "status_message": oc_msg,
@@ -2718,8 +2487,6 @@ def get_executors_status(
                 "supported_models": [
                     "google-vertex/gemini-2.5-pro",
                     "google-vertex/gemini-2.5-flash",
-                    "sec_agent_harness2/claude-sonnet-4-6",
-                    "sec_agent_harness2/gpt-4o",
                     "openai/gpt-4o",
                 ],
                 "capabilities": [
@@ -2729,43 +2496,9 @@ def get_executors_status(
                 ],
             },
             {
-                "id": "cx",
-                "name": "Codex (cx)",
-                "title": f"Codex CLI 执行基座 ({config.CODEX_VERSION})",
-                "category": "substrate",
-                "status": cx_status,
-                "status_message": cx_msg,
-                "cli_available": cx_cli_ok,
-                "cli_path": str(codex_bin_path) if cx_cli_ok else "",
-                "api_key_configured": cx_has_key,
-                "api_key_masked": _mask_secret(os.environ.get("SEC_AGENT_HARNESS2_CODEX_API_KEY") or (ep_cx.api_key if ep_cx else "")),
-                "current_model": cx_model,
-                "model_override": cx_model_override,
-                "base_url": cx_base_override,
-                "container_url": cx_container_url,
-                "effective_base_url": ep_cx.base_url if ep_cx else "",
-                "protocol": "openai-responses",
-                "using_unified": cx_using_unified,
-                "resolved_endpoint": api.describe(ep_cx),
-                "config_toml_status": "ok" if toml_err is None else "stale",
-                "config_toml_error": toml_err or "",
-                "supported_models": [
-                    "gpt-5.4",
-                    "gpt-4o",
-                    "o3-mini",
-                    "o1",
-                    "claude-sonnet-4-6",
-                ],
-                "capabilities": [
-                    "AGENTS.md + .agents/skills + .codex/hooks.json 表面",
-                    "内置 Tools Schema 归一化 Launcher 与 Responses 转换桥",
-                    "支持宿主机与 WorkBuddy Docker 容器双路由 (CONTAINER_URL)",
-                ],
-            },
-            {
                 "id": "pi",
                 "name": "Pi Coding Agent (pi)",
-                "title": f"Pi Coding Agent 执行基座 (@mariozechner/pi-coding-agent@{config.PI_VERSION})",
+                "title": f"Pi Coding Agent 执行基座 (@earendil-works/pi-coding-agent@{config.PI_VERSION})",
                 "category": "substrate",
                 "status": pi_status,
                 "status_message": pi_msg,
@@ -2785,8 +2518,6 @@ def get_executors_status(
                 "supported_models": [
                     "gpt-5.4",
                     "gpt-4o",
-                    "claude-sonnet-4-6",
-                    "claude-3-7-sonnet-20250219",
                     "gemini-2.5-pro",
                 ],
                 "capabilities": [
@@ -2818,8 +2549,6 @@ def get_executors_status(
                 "supported_models": [
                     "gemini-2.5-pro",
                     "gemini-2.5-flash",
-                    "claude-sonnet-4-6",
-                    "claude-3-7-sonnet-20250219",
                     "gpt-4o",
                 ],
                 "capabilities": [

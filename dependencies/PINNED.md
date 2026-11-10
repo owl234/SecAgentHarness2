@@ -9,13 +9,11 @@ checkout at another revision.
 | job-bench-eval | `fa03a17f9ff662f136798a274e10011c3aa00fd0` |
 | workbuddy-bench | `b516950be5b56eb3be406c2f76ee1c5111dcb57f` |
 | harvey-labs | `b58a28ae9fde5ee4b810e53b4fd0a1915325a35d` |
-| opencode | `23fb5e0516c99ac04a1aa46c193efda2e1b9bb24` |
+| opencode | `fedc6f208aa2bd54c1019227214568083f6380ad` (v2.2.7) |
+| pi-coding-agent | `@earendil-works/pi-coding-agent@1.5.1` |
 
 ## Included patches
 
-- `opencode-compat.diff`: fixes a moving Git dependency to the commit already in
-  the upstream lock and adds Opus 4.8 adaptive-thinking support to the pinned
-  provider adapter.
 - `job-bench-eval-judge.diff`: passes reasoning effort, raises the judge output
   cap, and rejects empty completions.
 - `harvey-labs-judge-vertex-anthropic.diff`: adds Claude and Gemini Vertex judges
@@ -30,8 +28,8 @@ files belong in `harness2/third_party/{jb,lab,wb}_runner/`, which this copy does
 include; setup copies the LAB and WorkBuddy overlays into the upstream checkouts.
 
 The upstream dependency locks are used for Python installations. OpenCode uses
-Bun 1.3.11 and the patched lock. Codex uses the version in `config.CODEX_VERSION`.
-Claude Code (clawgod) is isolated inside `dependencies/claude` with its own Bun >= 1.3.14.
+Bun 1.4.4 and the `packages/cli` entrypoint. Pi Coding Agent runs on Node.js using
+`@earendil-works/pi-coding-agent@1.5.1`.
 JobBench's Hugging Face revision is resolved once for a download and recorded in
 `dataset/main/.harness2-download.json`. WorkBuddy's dataset fetcher, as patched
 by setup, verifies each archive against the dataset repository's `SHA256SUMS` and

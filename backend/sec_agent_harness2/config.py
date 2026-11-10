@@ -136,10 +136,15 @@ def _solver_model_oc() -> str:
     return f"sec_agent_harness2/{API_MODEL}" if API_BASE_URL else API_MODEL
 
 
+def _solver_model_pi() -> str:
+    return env(
+        "SEC_AGENT_HARNESS2_PI_MODEL",
+        API_MODEL or (SOLVER_MODEL_OC.removeprefix("sec_agent_harness2/") if "/" in SOLVER_MODEL_OC else SOLVER_MODEL_OC),
+    )
+
+
 SOLVER_MODEL_OC = _solver_model_oc()
-SOLVER_MODEL_CX = env("SEC_AGENT_HARNESS2_CODEX_MODEL", SOLVER_MODEL_OC.removeprefix("sec_agent_harness2/"))
-SOLVER_MODEL_CLAUDE = env("SEC_AGENT_HARNESS2_CLAUDE_MODEL", API_MODEL or "claude-3-7-sonnet-20250219")
-SOLVER_MODEL_PI = env("SEC_AGENT_HARNESS2_PI_MODEL", API_MODEL or SOLVER_MODEL_CX)
+SOLVER_MODEL_PI = _solver_model_pi()
 IMPROVER_MODEL = env("SEC_AGENT_HARNESS2_IMPROVER_MODEL", SOLVER_MODEL_OC)
 JUDGE_MODEL = env("SEC_AGENT_HARNESS2_JUDGE_MODEL", API_MODEL)
 
@@ -147,7 +152,7 @@ DEPENDENCY_PINS = {
     "job-bench-eval": "fa03a17f9ff662f136798a274e10011c3aa00fd0",
     "workbuddy-bench": "b516950be5b56eb3be406c2f76ee1c5111dcb57f",
     "harvey-labs": "b58a28ae9fde5ee4b810e53b4fd0a1915325a35d",
-    "opencode": "23fb5e0516c99ac04a1aa46c193efda2e1b9bb24",
+    "opencode": "fedc6f208aa2bd54c1019227214568083f6380ad",
 }
 DEPENDENCY_ORIGINS = {
     "job-bench-eval": "https://github.com/Job-Bench/job-bench-eval.git",
@@ -173,7 +178,7 @@ OPENCODE_DIR = DEPENDENCIES / "opencode"
 BUN = DEPENDENCIES / "tools" / "node_modules" / ".bin" / "bun"
 LAB_PYTHON = lab_repo() / ".venv" / "bin" / "python"
 LAB_JUDGE_MODEL = (
-    "vertex/" + JUDGE_MODEL if JUDGE_MODEL.startswith(("claude", "gemini")) else JUDGE_MODEL
+    "vertex/" + JUDGE_MODEL if JUDGE_MODEL.startswith("gemini") else JUDGE_MODEL
 )
 LAB_DELIV_CAP = 60000
 JB_JUDGE_PYTHON = jb_repo() / ".venv" / "bin" / "python"
@@ -200,37 +205,23 @@ JB_JUDGE_REASONING_EFFORT = "low"
 JB_REPORTING_JUDGE_DETAILS = ""
 JB_OBS_TRUNC = 50000
 
-CODEX_VERSION = "0.144.6"
-CODEX_DIST = str(DEPENDENCIES / "codex" / "dist")
-CODEX_BASE_URL = env("SEC_AGENT_HARNESS2_CODEX_BASE_URL", API_BASE_URL)
-CODEX_CONTAINER_URL = env("SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL", CODEX_BASE_URL)
-VERTEX_PROXY_KEY = env("SEC_AGENT_HARNESS2_CODEX_API_KEY", API_KEY)
-CODEX_HOME_DIR = DEPENDENCIES / "codex" / "home"
-
-CLAUDE_DIST = DEPENDENCIES / "claude"
-CLAUDE_BIN = CLAUDE_DIST / "bin" / "clawgod"
-CLAUDE_VERSION = "2.1.307"
-
 PI_DIST = DEPENDENCIES / "pi"
 PI_BIN = PI_DIST / "node_modules" / ".bin" / "pi"
-PI_VERSION = "0.73.1"
+PI_VERSION = "1.5.1"
 PI_AGENT_DIR = DEPENDENCIES / "pi" / "agent"
 
 WB_SOLVER_MODEL = "sec_agent_harness2/solver"
 WB_WEB_JUDGE = "sec_agent_harness2/judge"
 WB_RENDER_PY = sys.executable
-WB_OC_HARNESS_VER = "1.14.18"
-WB_CX_HARNESS_VER = CODEX_VERSION
-WB_CLAUDE_HARNESS_VER = "1.0.0"
+WB_OC_HARNESS_VER = "2.2.7"
 WB_PI_HARNESS_VER = PI_VERSION
-WB_MAX_JOBS = {"oc": 1, "cx": 1, "claude": 1, "pi": 1}
-WB_MAX_TRIALS = {"oc": 2, "cx": 2, "claude": 2, "pi": 2}
+WB_MAX_JOBS = {"oc": 1, "pi": 1}
+WB_MAX_TRIALS = {"oc": 2, "pi": 2}
 WB_MODEL_CONNECTION = "local_proxy"
 
 DEFAULT_PROPOSER_CHANNEL = "opencode"
 PROPOSER_MODEL_BY_CHANNEL = {
     "opencode": IMPROVER_MODEL,
-    "claude_cli": IMPROVER_MODEL,
     "pi": IMPROVER_MODEL,
 }
 PHASE_WIDTH = 2
@@ -245,12 +236,6 @@ def validate_models(*, judge: bool = False, substrate: str = "oc") -> None:
                 "SEC_AGENT_HARNESS2_PI_MODEL is required for pi executor rollouts; set it in .env or "
                 "the shell, or set SEC_AGENT_HARNESS2_API_MODEL alongside SEC_AGENT_HARNESS2_API_BASE_URL"
             )
-    elif substrate == "claude":
-        if not SOLVER_MODEL_CLAUDE:
-            raise ConfigError("SEC_AGENT_HARNESS2_CLAUDE_MODEL is required for claude executor rollouts")
-    elif substrate == "cx":
-        if not SOLVER_MODEL_CX:
-            raise ConfigError("SEC_AGENT_HARNESS2_CODEX_MODEL is required for codex executor rollouts")
     else:
         if not SOLVER_MODEL_OC:
             raise ConfigError(

@@ -18,8 +18,7 @@
 | `--k K --mode parallel` | 每个范围（Scope）探索 `K` 个候选套件，并生成 `K` 个组合套件 |
 | `--k K --mode sequential` | 通过 `K` 个连续递进步骤提炼运行套件 |
 | `--workers N` | 并发运行 `N` 个领域；每个领域内的任务保持严格串行顺序 |
-| `--substrate cx` | 使用 Codex 执行器替代默认的 OpenCode 执行器 |
-| `--substrate claude` | 使用 Claude 执行器替代默认的 OpenCode 执行器 |
+| `--substrate pi` | 使用 Pi Coding Agent 执行器替代默认的 OpenCode 执行器 |
 | `--seed N` | 以可复现的方式打乱任务执行流；不控制模型的采样随机性 |
 
 在优化提炼（Refinement）、评测（Judging）和生成报告（Reporting）时，请务必使用完全相同的基准测试、执行器、子集、`k` 值、递归模式及随机种子（`harness2` 作为完全兼容的简短别名继续可用）。示例：
@@ -78,14 +77,14 @@ sec-agent-harness2 run --bench lab --split-file splits/lab.json --split test --m
 <a id="web-access"></a>
 ## 网络访问控制
 
-所有三个基准测试均属于公开数据集，且 JobBench 在 Hugging Face 上直接公开了各任务的 `RUBRICS.json` 评分准则。因此，具备网络访问权限的执行器可能会检索到评分标准。在本版本的一次内部验证运行中，Codex 执行器在运行 JobBench 任务时，在未经指示的情况下自主下载了该任务的评分准则。
+所有三个基准测试均属于公开数据集，且 JobBench 在 Hugging Face 上直接公开了各任务的 `RUBRICS.json` 评分准则。因此，具备网络访问权限的执行器可能会检索到评分标准。
 
 本发行版本默认不对网络访问施加限制。在安装配置完成后，建议针对执行器屏蔽以下主机域名，以杜绝智能体接触基准测试答案和评分标准的可能：
 
 - `huggingface.co`、`hf.co` 以及 `*.hf.co`
 - `github.com` 与 `raw.githubusercontent.com`（针对基准测试相关代码仓库）
 
-安装步骤本身需要访问上述主机以下载依赖和数据集。Codex 执行器在运行时处于沙箱关闭状态，因此请在网络层面实施访问限制（例如在执行器宿主机上配置出站防火墙规则或 DNS 策略），而不要依赖工具内部设置。在汇报实验结果时，请说明所采取的网络限制措施。
+安装步骤本身需要访问上述主机以下载依赖和数据集。执行器在运行时处于沙箱关闭状态，因此请在网络层面实施访问限制（例如在执行器宿主机上配置出站防火墙规则或 DNS 策略），而不要依赖工具内部设置。在汇报实验结果时，请说明所采取的网络限制措施。
 
 <a id="results-and-resume"></a>
 ## 结果与断点恢复

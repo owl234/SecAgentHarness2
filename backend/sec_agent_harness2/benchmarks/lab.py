@@ -36,8 +36,6 @@ from ..core import runmark as RM
 from ..core import tree as HT
 from ..core.spec import BenchPrompts, BenchSpec, resolve_channel_model
 from ..substrate.base import Install, RunRequest
-from ..substrate.claude import CLAUDE_SURFACE, ClaudeSubstrate, find_claude_binary
-from ..substrate.codex import CODEX_SURFACE, CodexSubstrate
 from ..substrate.opencode import OPENCODE_SURFACE, OpencodeSubstrate
 from ..substrate.pi import PI_SURFACE, PiSubstrate, find_pi_binary
 from .tasks import discover, select
@@ -291,7 +289,7 @@ def lab_prompts(*, practice_area: str = "", work_type: str = "") -> BenchPrompts
     return replace(LAB_BASE, domain_guidance=guidance)
 
 
-CODEX_BASE_BODY = """\
+PI_BASE_BODY = """\
 You are an AI agent completing a professional work assignment inside a workspace.
 The assignment message gives the absolute paths that apply to this run.
 
@@ -392,7 +390,7 @@ def _lab_env() -> dict[str, str]:
     return {
         **os.environ,
         "PYTHONPATH": str(config.lab_repo()),
-        "PATH": f"{config.LAB_PYTHON.parent}:{config.BUN.parent}:{config.CODEX_DIST}/codex-path:"
+        "PATH": f"{config.LAB_PYTHON.parent}:{config.BUN.parent}:"
         + os.environ.get("PATH", ""),
     }
 
@@ -488,15 +486,13 @@ def _require_runtime_scripts() -> frozenset[str]:
 
 def lab_spec(substrate_name: str) -> BenchSpec:
     """The LAB BenchSpec for one substrate cell. A value, not a code path."""
-    if substrate_name not in ("oc", "cx", "claude", "pi"):
+    if substrate_name not in ("oc", "pi"):
         raise ValueError(
-            f"substrate must be 'oc', 'cx', 'claude', or 'pi', got {substrate_name!r}"
+            f"substrate must be 'oc' or 'pi', got {substrate_name!r}"
         )
     channel = resolve_channel_model(None, None, effort="high")
     install_mode_map = {
         "oc": "workspace_config",
-        "cx": "codex_root",
-        "claude": "claude_root",
         "pi": "pi_root",
     }
     install_mode = install_mode_map[substrate_name]
@@ -542,21 +538,13 @@ class LabAdapter:
             self.substrate = OpencodeSubstrate(launcher=self._launch_oc)
             self.model = model or config.SOLVER_MODEL_OC
             self._results_root = config.RUNS / "lab" / "results" / "oc"
-        elif substrate == "cx":
-            self.substrate = CodexSubstrate(launcher=self._launch_cx)
-            self.model = model or config.SOLVER_MODEL_CX
-            self._results_root = config.RUNS / "lab" / "results" / "cx"
-        elif substrate == "claude":
-            self.substrate = ClaudeSubstrate(launcher=self._launch_claude)
-            self.model = model or config.SOLVER_MODEL_CLAUDE
-            self._results_root = config.RUNS / "lab" / "results" / "claude"
         elif substrate == "pi":
             self.substrate = PiSubstrate(launcher=self._launch_pi)
             self.model = model or config.SOLVER_MODEL_PI
             self._results_root = config.RUNS / "lab" / "results" / "pi"
         else:
             raise ValueError(
-                f"substrate must be 'oc', 'cx', 'claude', or 'pi', got {substrate!r}"
+                f"substrate must be 'oc' or 'pi', got {substrate!r}"
             )
         self.timeout = int(timeout or 3600)
         self.skill_mode = skill_mode
@@ -715,111 +703,6 @@ class LabAdapter:
             dirs.append(self._run_dir(run_id))
         return dirs
 
-    def _launch_cx(self, req: RunRequest, install: Install) -> list[Path]:
-        runner = config.lab_repo() / "external" / "adapt_runs_cx" / "run_codex_lab.py"
-        _require_runner(runner)
-        dirs = []
-        for run_id in req.run_ids:
-            cmd = [
-                str(config.LAB_PYTHON),
-                "-u",
-                str(runner),
-                "--task",
-                req.task_ref,
-                "--run-id",
-                run_id,
-                "--model",
-                self.model,
-                "--reasoning-effort",
-                self.solver_effort,
-                "--timeout",
-                str(req.timeout),
-                "--harness-dir",
-                str(install.staging_dir),
-            ]
-
-            endpoint = api.codex()
-            codex_base_url = endpoint.base_url if endpoint and endpoint.base_url else config.CODEX_BASE_URL
-            codex_api_key = endpoint.api_key if endpoint and endpoint.api_key else config.VERTEX_PROXY_KEY
-
-            env = {
-                **_lab_env(),
-                "ADAPT_LABCX_CODEX_BIN": str(Path(config.CODEX_DIST) / "codex"),
-                "ADAPT_LABCX_RESULTS": str(self._results_root),
-                "ADAPT_LABCX_SCRATCH": os.environ.get("ADAPT_LABCX_SCRATCH")
-                or str(config.RUNS / "lab" / "scratch"),
-                "ADAPT_LABCX_BASE_URL": codex_base_url
-                or os.environ.get("ADAPT_LABCX_BASE_URL"),
-            }
-            if codex_api_key:
-                env["VERTEX_PROXY_KEY"] = codex_api_key
-
-            try:
-                run_detached(
-                    cmd,
-                    cwd=config.lab_repo(),
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=req.timeout + 900,
-                )
-            except subprocess.TimeoutExpired:
-                print(f"  [lab-cx] runner wall-timeout for {req.task_ref} @ {run_id}", flush=True)
-            dirs.append(self._run_dir(run_id))
-        return dirs
-
-    def _launch_claude(self, req: RunRequest, install: Install) -> list[Path]:
-        runner = config.lab_repo() / "external" / "adapt_runs_claude" / "run_claude_lab.py"
-        _require_runner(runner)
-        binary = find_claude_binary()
-        dirs = []
-        for run_id in req.run_ids:
-            cmd = [
-                str(config.LAB_PYTHON),
-                "-u",
-                str(runner),
-                "--task",
-                req.task_ref,
-                "--run-id",
-                run_id,
-                "--model",
-                self.model,
-                "--reasoning-effort",
-                self.solver_effort,
-                "--timeout",
-                str(req.timeout),
-                "--harness-dir",
-                str(install.staging_dir),
-            ]
-
-            env = {
-                **_lab_env(),
-                "ADAPT_LABCLAUDE_BIN": str(binary),
-                "ADAPT_LABCLAUDE_RESULTS": str(self._results_root),
-                "ADAPT_LABCLAUDE_SCRATCH": os.environ.get("ADAPT_LABCLAUDE_SCRATCH")
-                or str(config.RUNS / "lab" / "scratch"),
-            }
-            endpoint = api.claude()
-            if endpoint is not None:
-                api.claude_env(endpoint, env)
-            elif hasattr(config, "ANTHROPIC_API_KEY") and config.ANTHROPIC_API_KEY:
-                env["ANTHROPIC_API_KEY"] = config.ANTHROPIC_API_KEY
-
-            try:
-                run_detached(
-                    cmd,
-                    cwd=config.lab_repo(),
-                    env=env,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=req.timeout + 900,
-                )
-            except subprocess.TimeoutExpired:
-                print(f"  [lab-claude] runner wall-timeout for {req.task_ref} @ {run_id}", flush=True)
-            dirs.append(self._run_dir(run_id))
-        return dirs
 
     def _launch_pi(self, req: RunRequest, install: Install) -> list[Path]:
         runner = config.lab_repo() / "external" / "adapt_runs_pi" / "run_pi_lab.py"
@@ -906,12 +789,8 @@ class LabAdapter:
         """The substrate's ONE renderer over the raw session stream, effectively uncapped."""
         if self.substrate.name == "oc":
             name = "opencode_session.jsonl"
-        elif self.substrate.name == "claude":
-            name = "claude_session.jsonl"
-        elif self.substrate.name == "pi":
-            name = "pi_session.jsonl"
         else:
-            name = "codex_session.jsonl"
+            name = "pi_session.jsonl"
         stream = Path(run_dir) / name
         if not stream.is_file():
             return f"(no trajectory recorded for {Path(run_dir).name})"
@@ -974,12 +853,8 @@ class LabAdapter:
         pid: the domain threads of one sweep share the path."""
         if self.substrate.name == "oc":
             d = self.spec.runs_root / f"_base_harness_{self.skill_mode}_{os.getpid()}"
-        elif self.substrate.name == "claude":
-            d = self.spec.runs_root / f"_base_harness_claude_{os.getpid()}"
-        elif self.substrate.name == "pi":
-            d = self.spec.runs_root / f"_base_harness_pi_{os.getpid()}"
         else:
-            d = self.spec.runs_root / f"_base_harness_cx_{os.getpid()}"
+            d = self.spec.runs_root / f"_base_harness_pi_{os.getpid()}"
         with _BASE_LOCK:
             if d not in _BASE_DONE:
                 if self.substrate.name == "oc":
@@ -994,24 +869,10 @@ class LabAdapter:
                         d,
                         allow_subagents=self.spec.allow_subagents,
                     )
-                elif self.substrate.name == "claude":
-                    HT.write_tree(
-                        CLAUDE_SURFACE,
-                        {"CLAUDE.md": CODEX_BASE_BODY},
-                        d,
-                        allow_subagents=self.spec.allow_subagents,
-                    )
-                elif self.substrate.name == "pi":
-                    HT.write_tree(
-                        PI_SURFACE,
-                        {"AGENTS.md": CODEX_BASE_BODY},
-                        d,
-                        allow_subagents=self.spec.allow_subagents,
-                    )
                 else:
                     HT.write_tree(
-                        CODEX_SURFACE,
-                        {"AGENTS.md": CODEX_BASE_BODY},
+                        PI_SURFACE,
+                        {"AGENTS.md": PI_BASE_BODY},
                         d,
                         allow_subagents=self.spec.allow_subagents,
                     )
@@ -1020,15 +881,11 @@ class LabAdapter:
 
     def validate_tree(self, tree: dict[str, str]) -> None:
         """LAB environment invariants: deliverables go to output/, binary documents are read
-        via scripts/read_doc.py. oc checks the RENDERED prompt, cx/pi the AGENTS.md body."""
+        via scripts/read_doc.py. oc checks the RENDERED prompt, pi the AGENTS.md body."""
         if self.substrate.name == "oc":
             self._validate_oc(tree)
-        elif self.substrate.name == "claude":
-            self._validate_claude(tree)
-        elif self.substrate.name == "pi":
-            self._validate_pi(tree)
         else:
-            self._validate_cx(tree)
+            self._validate_pi(tree)
 
     def _validate_oc(self, tree: dict[str, str]) -> None:
         with tempfile.TemporaryDirectory() as td:
@@ -1059,44 +916,6 @@ class LabAdapter:
                 "the rendered prompt must say .docx/.pdf/.pptx/.xlsx are readable only "
                 "via `python3 scripts/read_doc.py <path>` -- the `read` tool cannot "
                 "parse them and the agent will silently 'read' binary noise"
-            )
-        if errs:
-            raise ValueError(" | ".join(errs))
-
-    def _validate_cx(self, tree: dict[str, str]) -> None:
-        body = HT.always_on_text(CODEX_SURFACE, tree)
-        errs = []
-        if "output/" not in body:
-            errs.append(
-                "AGENTS.md must say deliverables go to `output/<filename>` "
-                "explicitly -- under codex nothing routes relative paths, and "
-                "anything left outside output/ is invisible to grading. Add the "
-                "output/ rule back to AGENTS.md."
-            )
-        if "read_doc.py" not in body:
-            errs.append(
-                "AGENTS.md must say .docx/.pdf/.pptx/.xlsx are readable only via "
-                "`python3 scripts/read_doc.py <path>` -- shell reads of binary "
-                "documents return noise, silently. Add the read_doc.py rule back "
-                "to AGENTS.md."
-            )
-        if errs:
-            raise ValueError(" | ".join(errs))
-
-    def _validate_claude(self, tree: dict[str, str]) -> None:
-        body = HT.always_on_text(CLAUDE_SURFACE, tree)
-        errs = []
-        if "output/" not in body:
-            errs.append(
-                "CLAUDE.md must say deliverables go to `output/<filename>` "
-                "explicitly -- under Claude Code relative write paths must route to output/. "
-                "Add the output/ rule back to CLAUDE.md."
-            )
-        if "read_doc.py" not in body:
-            errs.append(
-                "CLAUDE.md must say .docx/.pdf/.pptx/.xlsx are readable only via "
-                "`python3 scripts/read_doc.py <path>`. Add the read_doc.py rule back "
-                "to CLAUDE.md."
             )
         if errs:
             raise ValueError(" | ".join(errs))
@@ -1154,16 +973,10 @@ class LabAdapter:
         if self.substrate.name == "oc":
             _require_runner(config.lab_repo() / "opencode" / "run_opencode.py")
             _require_runtime_scripts()
-        elif self.substrate.name == "claude":
-            _require_runner(
-                config.lab_repo() / "external" / "adapt_runs_claude" / "run_claude_lab.py"
-            )
-        elif self.substrate.name == "pi":
+        else:
             _require_runner(
                 config.lab_repo() / "external" / "adapt_runs_pi" / "run_pi_lab.py"
             )
-        else:
-            _require_runner(config.lab_repo() / "external" / "adapt_runs_cx" / "run_codex_lab.py")
         try:
             r = subprocess.run(
                 [str(config.LAB_PYTHON), "-c", "import evaluation.scoring"],
@@ -1226,4 +1039,4 @@ class LabAdapter:
         }
 
 
-__all__ = ["LabAdapter", "lab_spec", "lab_prompts", "LAB_BASE", "CODEX_BASE_BODY", "JUDGE_MODEL"]
+__all__ = ["LabAdapter", "lab_spec", "lab_prompts", "LAB_BASE", "PI_BASE_BODY", "JUDGE_MODEL"]

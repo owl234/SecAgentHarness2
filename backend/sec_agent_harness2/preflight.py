@@ -75,11 +75,12 @@ def check(adapter, *, judge=False) -> list[str]:
                     errors.append(f"{dependency}: checkout differs from the supported pin")
             except subprocess.CalledProcessError:
                 errors.append(f"{dependency}: cannot read checkout revision")
-        patch = config.THIRD_PARTY / "patches" / PATCHES[dependency]
-        probe(
-            f"{dependency} patch",
-            ["git", "-C", target, "apply", "--reverse", "--check", patch],
-        )
+        if dependency in PATCHES:
+            patch = config.THIRD_PARTY / "patches" / PATCHES[dependency]
+            probe(
+                f"{dependency} patch",
+                ["git", "-C", target, "apply", "--reverse", "--check", patch],
+            )
     if sub_name == "oc" and not (config.OPENCODE_DIR / "node_modules").is_dir():
         errors.append(I18N.t("preflight.oc_missing", I18N.get_lang(), b=bench))
 
@@ -120,7 +121,7 @@ def check(adapter, *, judge=False) -> list[str]:
 
     if any(
         m.startswith("google-vertex") for m in (config.SOLVER_MODEL_OC, config.IMPROVER_MODEL)
-    ) or (judge and (bench == "wb" or config.JUDGE_MODEL.startswith(("claude", "gemini")))):
+    ) or (judge and (bench == "wb" or config.JUDGE_MODEL.startswith("gemini"))):
         probe(
             "Google Application Default Credentials",
             ["gcloud", "auth", "application-default", "print-access-token"],
@@ -174,7 +175,7 @@ def check(adapter, *, judge=False) -> list[str]:
                 repo / ".venv/bin/python",
                 "-c",
                 "import harbor; from workbuddy_bench.runner.harness_adapters import HARNESS_ADAPTERS; "
-                "assert all(k in HARNESS_ADAPTERS for k in ('opencode', 'oc-harness', 'codex-harness'))",
+                "assert all(k in HARNESS_ADAPTERS for k in ('opencode', 'oc-harness', 'pi-harness'))",
             ],
             cwd=repo,
         )

@@ -1,0 +1,3 @@
+# pi-harness 1.5.1 -- pi substrate baseline (@earendil-works/pi-coding-agent).
+harness:
+  version: "1.5.1"

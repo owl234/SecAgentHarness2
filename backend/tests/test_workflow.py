@@ -48,7 +48,7 @@ class WorkflowTests(unittest.TestCase):
         )
 
     def test_recursion_budget_and_resume(self):
-        with patch.dict(config.PROPOSER_MODEL_BY_CHANNEL, {"opencode": "", "claude_cli": ""}):
+        with patch.dict(config.PROPOSER_MODEL_BY_CHANNEL, {"opencode": "", "pi": ""}):
             unresolved = resolve_channel_model(None, None)
             self.assertEqual(unresolved.model, "")
             with self.assertRaises(ValueError):

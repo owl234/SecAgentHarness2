@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, BookOpen, Layers, Sparkles, Wrench, Terminal, Cpu, Flame } from 'lucide-react';
+import { X, BookOpen, Layers, Sparkles, Wrench, Terminal, Cpu } from 'lucide-react';
 import { useLang } from '../i18n/LangContext';
 import { useEscapeKey } from './ui/ToastContext';
 
@@ -34,13 +34,13 @@ export const TerminologyGuideModal: React.FC<TerminologyGuideModalProps> = ({ is
       color: 'text-amber-500 bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/20',
     },
     {
-      term: tx('Claude 执行器与混合推理', 'Claude Executor & Extended Thinking'),
+      term: tx('OpenCode 与 Pi 双基座执行体系', 'OpenCode & Pi Dual-Substrate Architecture'),
       desc: tx(
-        '基于 Anthropic Claude / Claude Code CLI 的一等公民执行底座，原生支持深度思考推演。',
-        'First-class substrate powered by Claude Code CLI (clawgod) with native reasoning effort control (low / medium / high).'
+        '基于 OpenCode (v2.2.7 Bun 运行时) 与 Pi Coding Agent (@earendil-works/pi-coding-agent) 的一等公民双执行底座，原生支持无锁并发与深度推理。',
+        'First-class dual execution substrates powered by OpenCode (v2.2.7 Bun runtime) and Pi Coding Agent (@earendil-works/pi-coding-agent) with native concurrency and reasoning controls.'
       ),
-      icon: Flame,
-      color: 'text-orange-500 bg-orange-50 dark:bg-orange-500/10 border-orange-200 dark:border-orange-500/20',
+      icon: Terminal,
+      color: 'text-blue-500 bg-blue-50 dark:bg-blue-500/10 border-blue-200 dark:border-blue-500/20',
     },
     {
       term: tx('诊断并提议', 'Diagnose & Propose Edits'),

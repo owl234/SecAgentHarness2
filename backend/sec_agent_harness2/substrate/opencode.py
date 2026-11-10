@@ -231,7 +231,7 @@ class OpencodeSubstrate:
         if mode not in _OC_INSTALL_MODES:
             raise ValueError(
                 f"install_mode {mode!r} is not an opencode mode; this substrate supports "
-                f"{_OC_INSTALL_MODES} (codex_root belongs to CodexSubstrate)"
+                f"{_OC_INSTALL_MODES}"
             )
         tree_dir = Path(tree_dir)
         if not HT.is_tree(OPENCODE_SURFACE, tree_dir):
@@ -304,7 +304,7 @@ class OpencodeSubstrate:
             str(config.BUN),
             "run",
             "--cwd",
-            str(config.OPENCODE_DIR / "packages" / "opencode"),
+            str(config.OPENCODE_DIR / "packages" / "cli"),
             "--conditions=browser",
             "src/index.ts",
             "run",
@@ -375,11 +375,11 @@ class OpencodeSubstrate:
     def preflight(self) -> None:
         """Checks the OpenCode checkout and bun exist; starts nothing."""
         oc = config.OPENCODE_DIR
-        if not (oc / "packages" / "opencode" / "src" / "index.ts").is_file():
+        if not (oc / "packages" / "cli" / "src" / "index.ts").is_file():
             raise RuntimeError(
-                f"OpenCode checkout missing at {oc} (no packages/opencode/src/index.ts): "
+                f"OpenCode checkout missing at {oc} (no packages/cli/src/index.ts): "
                 f"run scripts/setup_benchmark.py <benchmark> to fetch the pinned checkout "
-                f"at {config.DEPENDENCY_PINS['opencode'][:12]} (v1.14.18)."
+                f"at {config.DEPENDENCY_PINS['opencode'][:12]} (v2.2.7)."
             )
         if not config.BUN.is_file():
             raise RuntimeError(

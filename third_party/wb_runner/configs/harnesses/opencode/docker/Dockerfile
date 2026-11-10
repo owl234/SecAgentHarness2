@@ -20,7 +20,7 @@ RUN test -n "${OPENCODE_VERSION}"
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl unzip \
     && rm -rf /var/lib/apt/lists/*
-RUN npm install -g "opencode-ai@${OPENCODE_VERSION}"
+RUN npm install -g bun@1.4.4 "opencode-ai@${OPENCODE_VERSION}"
 
 # Bake ripgrep into the mount. OpenCode's glob/grep tools shell out to `rg`, and
 # file/ripgrep.ts resolves it as: which("rg") on PATH FIRST, else download from
@@ -54,6 +54,7 @@ RUN set -eux; \
     mkdir -p /out/bin /out/lib; \
     cp -r /usr/local/lib/node_modules /out/lib/node_modules; \
     cp /usr/local/bin/node /out/bin/node; \
+    if [ -f /usr/local/bin/bun ]; then cp /usr/local/bin/bun /out/bin/bun; fi; \
     cp /usr/local/bin/rg /out/bin/rg; \
     node -e ' \
       const fs = require("fs"), path = require("path"); \

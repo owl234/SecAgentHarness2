@@ -60,9 +60,8 @@ def main(argv=None):
                 if not shutil.which(binary):
                     raise RuntimeError(I18N.t("setup.missing", lang, b=binary))
         install.clone("opencode", dry_run=dry)
-        install.patch("opencode", dry_run=dry)
         install.run(
-            ["npm", "install", "--prefix", config.DEPENDENCIES / "tools", "bun@1.3.11"], dry_run=dry
+            ["npm", "install", "--prefix", config.DEPENDENCIES / "tools", "bun@1.4.4"], dry_run=dry
         )
         install.run(
             [config.BUN, "install", "--frozen-lockfile", "--ignore-scripts"],
@@ -107,16 +106,12 @@ def main(argv=None):
                         "bash",
                         "scripts/harness/build-harness-mounts.sh",
                         "--harness",
-                        "opencode/1.14.18",
+                        "opencode/2.2.7",
                     ],
                     cwd=repo,
                     dry_run=dry,
                 )
-        if args.substrate == "cx":
-            install.codex(dry_run=dry)
-        elif args.substrate == "claude":
-            install.claude(dry_run=dry)
-        elif args.substrate == "pi":
+        if args.substrate == "pi":
             install.pi(dry_run=dry)
     except (OSError, RuntimeError, ValueError, subprocess.CalledProcessError) as exc:
         p.exit(1, I18N.t("setup.failed", lang, e=exc) + "\n")

@@ -44,9 +44,9 @@ class AliasTests(unittest.TestCase):
         from sec_agent_harness2.cli import _common as C
 
         self.assertEqual(C.normalize_substrate("opencode"), "oc")
-        self.assertEqual(C.normalize_substrate("codex"), "cx")
         self.assertEqual(C.normalize_substrate("OC"), "oc")
-        self.assertEqual(C.normalize_substrate("cx"), "cx")
+        self.assertEqual(C.normalize_substrate("pi"), "pi")
+        self.assertEqual(C.normalize_substrate("PI"), "pi")
 
     def test_unknown_values_pass_through_to_canonical_error(self):
         from sec_agent_harness2.cli import _common as C

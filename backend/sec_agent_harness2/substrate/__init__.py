@@ -14,14 +14,12 @@
 
 """The solver substrates behind one interface (substrate/base.py).
 
-`OpencodeSubstrate` carries OPENCODE_SURFACE and three install modes; `CodexSubstrate`
-carries CODEX_SURFACE and one; `ClaudeSubstrate` carries CLAUDE_SURFACE and one.
+`OpencodeSubstrate` carries OPENCODE_SURFACE and three install modes;
+`PiSubstrate` carries PI_SURFACE and one.
 Benchmark adapters supply the launcher body.
 """
 
 from .base import Install, Launcher, RunRequest, Substrate
-from .claude import CLAUDE_SURFACE, ClaudeSubstrate
-from .codex import CODEX_SURFACE, CodexSubstrate
 from .opencode import OPENCODE_SURFACE, OpencodeSubstrate
 from .pi import PI_SURFACE, PiSubstrate
 
@@ -30,12 +28,8 @@ __all__ = [
     "Launcher",
     "RunRequest",
     "Substrate",
-    "ClaudeSubstrate",
-    "CLAUDE_SURFACE",
     "OpencodeSubstrate",
     "OPENCODE_SURFACE",
-    "CodexSubstrate",
-    "CODEX_SURFACE",
     "PiSubstrate",
     "PI_SURFACE",
 ]

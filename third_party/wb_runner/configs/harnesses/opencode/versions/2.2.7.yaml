@@ -1,0 +1,11 @@
+# OpenCode 2.2.7. Version + preset mapping only; _defaults.yaml carries the
+# rest. See CONFIG.md for the version-to-preset mapping and the deny-parity table.
+harness:
+  params:
+    OPENCODE_VERSION: "2.2.7"
+  settings_file: configs/harnesses/opencode/presets/settings/v1_14.json
+  env:
+    # Telemetry / auto-update off
+    OPENCODE_DISABLE_AUTOUPDATE: "1"
+    OPENCODE_TELEMETRY_DISABLED: "1"
+    OPENCODE_DISABLE_PROJECT_CONFIG: "1"

@@ -14,8 +14,8 @@
 
 """Improver sessions with file access in an isolated context workspace.
 
-OpenCode reads output/answer.md or the final message; the Claude CLI reads the
-final message. Prompts use stdin, and empty replies raise an error.
+OpenCode reads output/answer.md or the final message; Pi reads the session output.
+Prompts use stdin or context workspace, and empty replies raise an error.
 """
 
 from __future__ import annotations
@@ -43,13 +43,7 @@ MAX_CONCURRENCY = int(config.PROPOSER_CONCURRENCY)
 _SEM = threading.BoundedSemaphore(MAX_CONCURRENCY) if MAX_CONCURRENCY > 0 else None
 
 
-_DROP_ENV = (
-    "ANTHROPIC_API_KEY",
-    "ANTHROPIC_AUTH_TOKEN",
-    "ANTHROPIC_BASE_URL",
-    "ANTHROPIC_BEDROCK_BASE_URL",
-    "CLAUDE_CODE_USE_BEDROCK",
-)
+_DROP_ENV = ()
 
 
 def _obj(d: dict, key: str) -> dict:
@@ -104,21 +98,7 @@ class Proposer:
 
     def env(self) -> dict[str, str]:
         e = {k: v for k, v in os.environ.items() if k not in _DROP_ENV}
-        if self.spec.kind == "claude_cli":
-            endpoint = api.claude()
-            if endpoint is not None:
-                api.claude_env(endpoint, e)
-                e["ANTHROPIC_MODEL"] = self.spec.model
-            else:
-                e.update(
-                    {
-                        "CLAUDE_CODE_USE_VERTEX": "1",
-                        "ANTHROPIC_VERTEX_PROJECT_ID": self.project,
-                        "CLOUD_ML_REGION": self.region,
-                        "ANTHROPIC_MODEL": self.spec.model,
-                    }
-                )
-        elif self.spec.kind == "pi":
+        if self.spec.kind == "pi":
             endpoint = api.pi()
             if endpoint is not None:
                 api.pi_env(replace(endpoint, model=self.spec.model), e)
@@ -175,9 +155,7 @@ class Proposer:
                 if context_dir and Path(context_dir).is_dir():
                     shutil.copytree(context_dir, tmp / "context", dirs_exist_ok=True)
                 with _SEM if _SEM is not None else contextlib.nullcontext():
-                    if self.spec.kind == "claude_cli":
-                        runner_fn = self._claude_cli
-                    elif self.spec.kind == "pi":
+                    if self.spec.kind == "pi":
                         runner_fn = self._pi
                     else:
                         runner_fn = self._opencode
@@ -226,51 +204,6 @@ class Proposer:
             attempts=tries,
             cost_usd=spent_usd,
         )
-
-    def _claude_cli(
-        self, cwd: Path, mission: str, system: str, wall: int
-    ) -> tuple[str, float, str]:
-        from ..substrate.claude import find_claude_binary
-
-        cli = str(find_claude_binary())
-        cmd = [
-            cli,
-            "--dangerously-skip-permissions",
-            "-p",
-            "--output-format",
-            "json",
-            "--effort",
-            self.spec.effort,
-        ]
-        stdin = mission
-        if system:
-            if len(system) > SYSTEM_ARG_MAX:
-                stdin = f"# SYSTEM INSTRUCTIONS\n\n{system}\n\n# END\n\n{mission}"
-                cmd += [
-                    "--append-system-prompt",
-                    "Follow the SYSTEM INSTRUCTIONS block at the top of the message.",
-                ]
-            else:
-                cmd += ["--append-system-prompt", system]
-        p = subprocess.run(
-            cmd,
-            input=stdin,
-            cwd=cwd,
-            env=self.env(),
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=wall,
-        )
-        payload = _parse_json(p.stdout)
-        text = str(payload.get("result") or payload.get("text") or "")
-        err = ""
-        if payload.get("is_error") or payload.get("subtype") not in (None, "success"):
-            err = f"CLI error: {payload.get('subtype')} {str(text)[:200]}"
-            text = ""
-        elif p.returncode != 0 and not text.strip():
-            err = f"rc={p.returncode}: {(p.stderr or '')[-300:]}"
-        return text, float(payload.get("total_cost_usd") or 0.0), err
 
     def _opencode(self, cwd: Path, mission: str, system: str, wall: int) -> tuple[str, float, str]:
         (cwd / "MISSION.md").write_text(
@@ -491,10 +424,7 @@ def _opencode_dir() -> Path:
 
 
 def _parse_json(stdout: str) -> dict:
-    """The claude CLI's one JSON object, tolerating banners and trailing noise around it.
-
-    Not for opencode stdout, which is a JSONL event stream: use `_opencode_stdout`.
-    """
+    """Parse JSON object, tolerating banners and trailing noise around it."""
     s = (stdout or "").strip()
     if not s:
         return {}

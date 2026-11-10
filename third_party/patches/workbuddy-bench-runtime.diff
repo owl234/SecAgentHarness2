@@ -700,28 +700,10 @@ index 6c0f040..fe56cab 100644
      "cbc-agent": HarnessRuntimeAdapter(
          harness_name="cbc-agent",
          canonical_display_name="CodeBuddy Code CLI",
-@@ -80,6 +107,33 @@ HARNESS_ADAPTERS: dict[str, HarnessRuntimeAdapter] = {
+@@ -80,6 +107,14 @@ HARNESS_ADAPTERS: dict[str, HarnessRuntimeAdapter] = {
          proxy_url_env="CBC_PROXY_URL",
          uses_anthropic_env=False,
      ),
-+    # Codex CLI + harness workspace (eval/wb_codex_adapter, adapt_core_cx).
-+    # ADDITIVE REGISTRATION ONLY — no existing entry is touched. Codex speaks the
-+    # Responses API, which the bench proxy does not serve, so the agent addresses
-+    # the model natively via CODEX_BRIDGE_URL (harness version yaml) + the
-+    # VERTEX_PROXY_KEY bearer (job env_override) and ignores the proxy URL; these
-+    # env names are declared so DIRECT-mode exports and log display stay coherent,
-+    # and proxy_url_env is empty because no codex env ever carries the bench
-+    # proxy address (the run still uses model_connection: local_proxy for the
-+    # office judge's in-container routing).
-+    "codex-harness": HarnessRuntimeAdapter(
-+        harness_name="codex-harness",
-+        canonical_display_name="Codex CLI (harness-adaptive)",
-+        harness_protocol="openai",
-+        backend_base_env="CODEX_BRIDGE_URL",
-+        backend_key_env="VERTEX_PROXY_KEY",
-+        proxy_url_env="",
-+        uses_anthropic_env=False,
-+    ),
 +    # Pi Coding Agent CLI + harness workspace (pi_harness_agent, PiSubstrate).
 +    "pi-harness": HarnessRuntimeAdapter(
 +        harness_name="pi-harness",

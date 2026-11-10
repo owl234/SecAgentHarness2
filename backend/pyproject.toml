@@ -20,8 +20,6 @@ dependencies = []
 
 [project.optional-dependencies]
 render = ["openpyxl>=3.1,<4", "python-pptx>=1,<2"]
-bridge = ["litellm[proxy]==1.95.0", "fastapi==0.139.2", "google-auth==2.56.3", "httpx>=0.27.0"]
-responses-bridge = ["fastapi>=0.115.0", "uvicorn>=0.30.0", "httpx>=0.27.0"]
 ui = ["fastapi>=0.115.0", "uvicorn>=0.30.0"]
 
 [project.scripts]
@@ -32,8 +30,6 @@ sec-agent-harness2-report = "sec_agent_harness2.cli.report:main"
 sec-agent-harness2-setup = "sec_agent_harness2.cli.setup:main"
 sec-agent-harness2-check = "sec_agent_harness2.cli.check:main"
 sec-agent-harness2-demo = "sec_agent_harness2.cli.demo:main"
-sec-agent-harness2-bridge = "sec_agent_harness2.cli.bridge:main"
-sec-agent-harness2-responses-bridge = "sec_agent_harness2.cli.responses_bridge:main"
 sec-agent-harness2-ui = "sec_agent_harness2.cli.ui:main"
 harness2 = "sec_agent_harness2.cli.main:main"
 harness2-run = "sec_agent_harness2.cli.run_sweep:main"
@@ -42,8 +38,6 @@ harness2-report = "sec_agent_harness2.cli.report:main"
 harness2-setup = "sec_agent_harness2.cli.setup:main"
 harness2-check = "sec_agent_harness2.cli.check:main"
 harness2-demo = "sec_agent_harness2.cli.demo:main"
-harness2-bridge = "sec_agent_harness2.cli.bridge:main"
-harness2-responses-bridge = "sec_agent_harness2.cli.responses_bridge:main"
 harness2-ui = "sec_agent_harness2.cli.ui:main"
 
 [tool.setuptools.packages.find]

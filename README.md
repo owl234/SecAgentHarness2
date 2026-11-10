@@ -36,7 +36,7 @@
 
 在三个专业基准测试和四种“模型–运行套件”配置下，单步 Harness² 优化便可在基础套件之上显著提升 GLM-5 与 Gemini 3.5 Flash 的表现：在 WorkBuddy-Bench 上提升多达 11.5 分，在 JobBench 上提升 4.5 分，并在 LAB 的部分通过率（Partial pass rate）上提升 11.8 个百分点。进一步提高任务级递归预算（Budget）还可带来持续的性能增益。
 
-本发布版本支持**并行递归与序列递归**、**OpenCode 与 Codex 执行器**，以及 **JobBench、LAB 和 WorkBuddy-Bench** 三大基准测试。
+本发布版本支持**并行递归与序列递归**、**OpenCode 与 Pi 执行器**，以及 **JobBench、LAB 和 WorkBuddy-Bench** 三大基准测试。
 
 <a id="video-overview"></a>
 ## 视频概览
@@ -112,7 +112,7 @@ cp .env.example .env
 gcloud auth application-default login
 ```
 
-有关统一 API 接入（单一端点驱动三大基座）、模型配置选项、替代身份验证方案以及 [Codex 执行器](docs/SETUP_zh.md#codex-执行器)，请参阅[安装配置指南](docs/SETUP_zh.md)。
+有关统一 API 接入（单一端点驱动 OpenCode 与 Pi 双基座）、模型配置选项以及 [Pi 执行器](docs/SETUP_zh.md#pi-执行器)，请参阅[安装配置指南](docs/SETUP_zh.md)。
 
 <a id="run-a-benchmark"></a>
 ## 运行基准测试
@@ -124,7 +124,7 @@ sec-agent-harness2 setup lab
 sec-agent-harness2 pipeline --bench lab --preset smoke
 ```
 
-`pipeline` 用同一套实验标识一次跑通 check → run → judge → report，无需重复输入 `--bench/--k/--mode/--substrate/--seed`。`--preset smoke` 展开为文档标准单任务冒烟（`--only-domains antitrust-competition --max-tasks 1`）。基准与执行器支持全名：`--bench jobbench|workbuddy|harvey-labs`、`--substrate opencode|codex|claude`。原分立命令（`sec-agent-harness2-setup`、`sec-agent-harness2-check`、`sec-agent-harness2-run`、`sec-agent-harness2-judge`、`sec-agent-harness2-report`）以及简短前缀 `harness2*` 别名均保持无缝兼容且参数相同。
+`pipeline` 用同一套实验标识一次跑通 check → run → judge → report，无需重复输入 `--bench/--k/--mode/--substrate/--seed`。`--preset smoke` 展开为文档标准单任务冒烟（`--only-domains antitrust-competition --max-tasks 1`）。基准与执行器支持全名：`--bench jobbench|workbuddy|harvey-labs`、`--substrate opencode|pi`。原分立命令（`sec-agent-harness2-setup`、`sec-agent-harness2-check`、`sec-agent-harness2-run`、`sec-agent-harness2-judge`、`sec-agent-harness2-report`）以及简短前缀 `harness2*` 别名均保持无缝兼容且参数相同。
 
 #### 完整执行生命周期速查
 
@@ -174,15 +174,14 @@ sec-agent-harness2 pipeline --bench lab --preset smoke
 | `--k 1` | 单步 Propose–Probe–Compose 提炼 |
 | `--k K --mode parallel` | 探测 `K` 个通用候选和 `K` 个领域专属候选，随后基于共享证据生成 `K` 个组合套件 |
 | `--k K --mode sequential` | 通过 `K` 个连续步骤层层递进提炼运行套件 |
-| `--substrate cx` | 使用 Codex 执行器替代默认的 OpenCode 执行器 |
-| `--substrate claude` | 使用 Claude 执行器替代默认的 OpenCode 执行器 |
+| `--substrate pi` | 使用 Pi Coding Agent 执行器替代默认的 OpenCode 执行器 |
 
 在完成每个任务后，套件级递归（Harnessing-level recursion）会保留被采纳的运行套件以及有证据支持的经验教训，用于指导后续任务的提炼。有关任务选择、并发设置、可复现性以及基线对比等内容，请参见[实验指南](docs/EXPERIMENTS_zh.md)。
 
 <a id="web-access"></a>
 ## 网络访问控制
 
-执行器的网络访问默认是不受限制的，且 Codex 在运行时处于沙箱关闭状态。公开基准测试的评分准则（Rubrics）可能能够在线访问。在启动评测之前，请先配置[网络访问限制](docs/EXPERIMENTS_zh.md#网络访问控制)，防止智能体在执行过程中获取基准测试答案或评分标准。
+执行器的网络访问默认是不受限制的。公开基准测试的评分准则（Rubrics）可能能够在线访问。在启动评测之前，请先配置[网络访问限制](docs/EXPERIMENTS_zh.md#网络访问控制)，防止智能体在执行过程中获取基准测试答案或评分标准。
 
 <a id="results-and-resume"></a>
 ## 结果与断点恢复

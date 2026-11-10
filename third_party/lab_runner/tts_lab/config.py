@@ -1,4 +1,4 @@
-"""Paths and answer-free task data used by the LAB Codex runner."""
+"""Paths and answer-free task data used by the LAB runner."""
 from __future__ import annotations
 import json
 from pathlib import Path

@@ -699,7 +699,7 @@ export const StudioTopologyCanvas: React.FC<StudioTopologyCanvasProps> = ({
                       {tx('Substrate 隔离执行沙箱', 'Substrate Execution Sandbox')}
                     </span>
                     <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-300 border border-teal-500/30 font-bold shrink-0">
-                      OpenCode / Codex / Claude
+                      OpenCode / Pi
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-300 mt-0.5 truncate">

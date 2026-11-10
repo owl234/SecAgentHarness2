@@ -30,7 +30,7 @@ from ..core.spec import BenchmarkAdapter
 
 BENCHES = ("jb", "wb", "lab")
 WB_SUBSETS = ("office", "web", "code")
-SUBSTRATES = ("oc", "cx", "claude", "pi")
+SUBSTRATES = ("oc", "pi")
 
 # Human-friendly aliases: the canonical short tokens stay on disk (namespaces,
 # library variants, run IDs), but users may type the full names anywhere a
@@ -51,11 +51,6 @@ BENCH_ALIASES = {
 SUBSTRATE_ALIASES = {
     "oc": "oc",
     "opencode": "oc",
-    "cx": "cx",
-    "codex": "cx",
-    "claude": "claude",
-    "cl": "claude",
-    "clawgod": "claude",
     "pi": "pi",
     "pi-mono": "pi",
     "pi-coding-agent": "pi",

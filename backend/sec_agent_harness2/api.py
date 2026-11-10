@@ -14,15 +14,13 @@
 
 """One API endpoint and key, adapted to each substrate's wire protocol.
 
-The three CLIs do not speak the same protocol, so a single
+The two CLIs (OpenCode and Pi) do not speak the same protocol, so a single
 `SEC_AGENT_HARNESS2_API_BASE_URL` / `SEC_AGENT_HARNESS2_API_KEY` pair is translated per substrate:
 
-    cx      openai-responses   Codex refuses anything but `wire_api = "responses"`
-    claude  anthropic          native Messages API; `openai-chat` opts into clawgod's proxy
     oc      openai-chat        OpenAI-compatible provider block in opencode.json
+    pi      multi-protocol     openai-completions, openai-responses, anthropic-messages
 
-Per-substrate variables win over the shared pair, so an existing deployment that
-sets `SEC_AGENT_HARNESS2_CODEX_*` or `ANTHROPIC_*` keeps working unchanged.
+Per-substrate variables win over the shared pair.
 """
 
 from __future__ import annotations
@@ -37,8 +35,6 @@ from . import config  # noqa: F401
 
 PROTOCOLS = ("anthropic", "openai-chat", "openai-responses")
 
-# clawgod selects its translation proxy from provider.json, not from the environment.
-CLAW_GOD_PROVIDER = "claude"
 OPENCODE_PROVIDER = "sec_agent_harness2"
 
 
@@ -83,184 +79,6 @@ def _shared() -> tuple[str, str, str]:
         _first("SEC_AGENT_HARNESS2_API_BASE_URL"),
         _first("SEC_AGENT_HARNESS2_API_KEY"),
         _first("SEC_AGENT_HARNESS2_API_MODEL"),
-    )
-
-
-def _get_bridge_endpoint(for_container: bool = False) -> tuple[str, str] | None:
-    """Read bridge configuration (port, key) from dependencies/codex/responses-bridge.json."""
-    try:
-        bridge_path = config.DEPENDENCIES / "codex" / "responses-bridge.json"
-        if not bridge_path.is_file():
-            from .cli.responses_bridge import _endpoint
-
-            bridge_path.parent.mkdir(parents=True, exist_ok=True)
-            _endpoint(bridge_path)
-        if bridge_path.is_file():
-            data = json.loads(bridge_path.read_text(encoding="utf-8"))
-            port = data.get("port") or 8765
-            key = data.get("key") or ""
-            host = "host.docker.internal" if for_container else "127.0.0.1"
-            return f"http://{host}:{port}/v1", key
-    except Exception:
-        pass
-    return None
-
-
-def probe_upstream_responses_capability(
-    base_url: str,
-    api_key: str,
-    *,
-    timeout: float = 8.0,
-) -> dict:
-    """Probe whether an upstream base_url supports the Responses API (/v1/responses) natively."""
-    import time
-    import urllib.error
-    import urllib.request
-
-    clean_base = (base_url or "").rstrip("/")
-    if not clean_base:
-        return {
-            "wire_mode": "bridge",
-            "status_code": None,
-            "latency_ms": 0,
-            "message": "No base_url provided",
-            "url": "",
-        }
-    responses_url = clean_base + ("/responses" if clean_base.endswith("/v1") else "/v1/responses")
-    body = json.dumps({"model": "ping", "input": "ping", "max_output_tokens": 1}).encode("utf-8")
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-        "User-Agent": "Harness2-ResponsesProbe/1.0",
-    }
-    req = urllib.request.Request(responses_url, data=body, headers=headers, method="POST")
-    t0 = time.perf_counter()
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            latency = int((time.perf_counter() - t0) * 1000)
-            return {
-                "wire_mode": "native",
-                "status_code": resp.status,
-                "latency_ms": latency,
-                "message": f"Upstream natively supports Responses API (HTTP {resp.status}, {latency}ms)",
-                "url": responses_url,
-            }
-    except urllib.error.HTTPError as err:
-        latency = int((time.perf_counter() - t0) * 1000)
-        # Route does not exist on server -> bridge needed
-        if err.code in (404, 405):
-            return {
-                "wire_mode": "bridge",
-                "status_code": err.code,
-                "latency_ms": latency,
-                "message": f"Upstream lacks Responses endpoint (HTTP {err.code}, {latency}ms) - Bridge managed",
-                "url": responses_url,
-            }
-        # Route exists and responded (even if rejecting model/auth/params) -> native responses capability
-        if err.code in (400, 401, 403, 422):
-            return {
-                "wire_mode": "native",
-                "status_code": err.code,
-                "latency_ms": latency,
-                "message": f"Upstream recognizes Responses endpoint (HTTP {err.code}, {latency}ms)",
-                "url": responses_url,
-            }
-        return {
-            "wire_mode": "bridge",
-            "status_code": err.code,
-            "latency_ms": latency,
-            "message": f"Upstream error (HTTP {err.code}, {latency}ms) - fallback to Bridge",
-            "url": responses_url,
-        }
-    except Exception as exc:
-        latency = int((time.perf_counter() - t0) * 1000)
-        return {
-            "wire_mode": "bridge",
-            "status_code": None,
-            "latency_ms": latency,
-            "message": f"Connection to upstream failed ({type(exc).__name__}) - fallback to Bridge",
-            "url": responses_url,
-        }
-
-
-def codex(for_container: bool = False) -> Endpoint | None:
-    """Codex speaks only the Responses API; there is no chat fallback in 0.144.6."""
-    shared_url, shared_key, shared_model = _shared()
-    explicit_codex_url = _first("SEC_AGENT_HARNESS2_CODEX_BASE_URL")
-    explicit_codex_key = _first("SEC_AGENT_HARNESS2_CODEX_API_KEY")
-    model = _first("SEC_AGENT_HARNESS2_CODEX_MODEL") or shared_model
-
-    wire_mode = _first("SEC_AGENT_HARNESS2_CODEX_WIRE_MODE")
-    if not wire_mode:
-        try:
-            bridge_path = config.DEPENDENCIES / "codex" / "responses-bridge.json"
-            if bridge_path.is_file():
-                saved = json.loads(bridge_path.read_text(encoding="utf-8"))
-                wire_mode = saved.get("wire_mode", "")
-        except Exception:
-            pass
-
-    # If explicit wire_mode is bridge, or if explicit_codex_url points to local bridge
-    if wire_mode == "bridge" or (
-        explicit_codex_url and any(h in explicit_codex_url for h in ("127.0.0.1:8765", "0.0.0.0:8765", "localhost:8765"))
-    ):
-        bridge_ep = _get_bridge_endpoint(for_container=for_container)
-        if bridge_ep:
-            b_url, b_key = bridge_ep
-            return Endpoint(
-                base_url=b_url,
-                api_key=b_key or explicit_codex_key or shared_key,
-                protocol="openai-responses",
-                model=model,
-            )
-        host = "host.docker.internal" if for_container else "127.0.0.1"
-        return Endpoint(
-            base_url=f"http://{host}:8765/v1",
-            api_key=explicit_codex_key or shared_key,
-            protocol="openai-responses",
-            model=model,
-        )
-
-    url = explicit_codex_url or shared_url
-    if not url:
-        return None
-
-    key = explicit_codex_key or shared_key
-    if for_container:
-        from urllib.parse import urlparse, urlunparse
-
-        parsed = urlparse(url)
-        if parsed.hostname in ("127.0.0.1", "localhost", "0.0.0.0"):
-            port_str = f":{parsed.port}" if parsed.port else ""
-            netloc = f"host.docker.internal{port_str}"
-            url = urlunparse((parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment))
-
-    return Endpoint(
-        base_url=url,
-        api_key=key,
-        protocol="openai-responses",
-        model=model,
-    )
-
-
-def claude() -> Endpoint | None:
-    """Claude Code: native Messages by default, OpenAI chat through clawgod's proxy.
-
-    SEC_AGENT_HARNESS2_* wins over ANTHROPIC_*: when Harness2 itself runs under Claude Code,
-    the host session exports ANTHROPIC_BASE_URL pointing at its own proxy, and
-    inheriting that would silently send rollouts to the wrong endpoint.
-    """
-    shared_url, shared_key, shared_model = _shared()
-    url = _first("SEC_AGENT_HARNESS2_CLAUDE_BASE_URL") or shared_url or _first("ANTHROPIC_BASE_URL")
-    if not url:
-        return None
-    return Endpoint(
-        base_url=url,
-        api_key=_first("SEC_AGENT_HARNESS2_CLAUDE_API_KEY")
-        or shared_key
-        or _first("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"),
-        protocol=_protocol("SEC_AGENT_HARNESS2_CLAUDE_PROTOCOL", "anthropic"),
-        model=_first("SEC_AGENT_HARNESS2_CLAUDE_MODEL") or shared_model,
     )
 
 
@@ -382,31 +200,12 @@ def pi_env(
     env.setdefault("PI_OFFLINE", "1")
     env.setdefault("PI_SKIP_VERSION_CHECK", "1")
     env.setdefault("PI_TELEMETRY", "0")
-    return env
-
-
-def claude_env(endpoint: Endpoint, env: dict[str, str]) -> dict[str, str]:
-    """Map an endpoint onto the variables clawgod reads, without clobbering the caller.
-
-    Only the native Anthropic protocol is expressible through the environment alone.
-    `openai-chat` needs clawgod's provider.json, which is a single global file under
-    the install directory, so concurrent rollouts would overwrite each other; callers
-    that want it must use `claude_provider_json` and serialise their runs.
-    """
-    if endpoint.protocol != "anthropic":
-        raise ValueError(
-            "the claude substrate reaches a non-Anthropic endpoint only through clawgod's "
-            "openai-chat proxy, which is configured by a single global provider.json; "
-            "set SEC_AGENT_HARNESS2_CLAUDE_PROTOCOL=anthropic or point SEC_AGENT_HARNESS2_API_BASE_URL at an "
-            "Anthropic-compatible endpoint"
-        )
-    env.setdefault("ANTHROPIC_BASE_URL", endpoint.base_url)
-    # clawgod sends ANTHROPIC_API_KEY to Anthropic itself and ANTHROPIC_AUTH_TOKEN to a
-    # compatible proxy; sending the wrong one drops the Authorization header.
-    if endpoint.is_anthropic_native:
-        env.setdefault("ANTHROPIC_API_KEY", endpoint.api_key)
-    else:
-        env.setdefault("ANTHROPIC_AUTH_TOKEN", endpoint.api_key)
+    if endpoint.base_url:
+        env["PI_BASE_URL"] = endpoint.base_url
+    if endpoint.api_key:
+        env["PI_API_KEY"] = endpoint.api_key
+    if endpoint.model:
+        env["PI_MODEL"] = endpoint.model
     return env
 
 
@@ -455,27 +254,6 @@ def opencode_config(endpoint: Endpoint) -> str:
     return json.dumps(block)
 
 
-def claude_provider_json(endpoint: Endpoint) -> str:
-    """`provider.json` for clawgod's openai-chat mode.
-
-    clawgod only starts its Messages<->Chat translation proxy when `protocol` says
-    `openai-chat`, and it reads that from provider.json rather than the environment,
-    so this file is the one place the key has to be written to disk.
-    """
-    return json.dumps(
-        {
-            "protocol": "openai-chat",
-            "apiKey": endpoint.api_key,
-            "baseURL": endpoint.base_url,
-            "model": endpoint.model,
-            "smallModel": "",
-            "effort": "",
-            "timeoutMs": 3000000,
-        },
-        indent=2,
-    ) + "\n"
-
-
 def describe(endpoint: Endpoint | None) -> str:
     """One line for `harness2 check`; never includes the key."""
     if endpoint is None:
@@ -488,10 +266,6 @@ __all__ = [
     "PI_PROVIDER",
     "PROTOCOLS",
     "Endpoint",
-    "claude",
-    "claude_env",
-    "claude_provider_json",
-    "codex",
     "describe",
     "opencode",
     "opencode_config",
@@ -499,5 +273,4 @@ __all__ = [
     "pi",
     "pi_env",
     "pi_models_json",
-    "probe_upstream_responses_capability",
 ]

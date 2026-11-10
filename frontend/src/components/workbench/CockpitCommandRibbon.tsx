@@ -2,7 +2,7 @@ import React from 'react';
 import {
   ShieldCheck,
   ShieldAlert,
-  Flame,
+  Cpu,
   BarChart3,
   HelpCircle,
   Activity,
@@ -44,17 +44,13 @@ export const CockpitCommandRibbon: React.FC<CockpitCommandRibbonProps> = ({
   );
 
   const activeExecutorLabel =
-    executorStatus?.active_executor === 'oc'
-      ? 'OpenCode (oc)'
-      : executorStatus?.active_executor === 'cx'
-      ? 'Codex (cx)'
-      : executorStatus?.active_executor === 'pi'
+    executorStatus?.active_executor === 'pi'
       ? 'Pi Coding Agent (pi)'
-      : 'Claude Code';
+      : 'OpenCode (oc)';
 
   const activeEffort =
     executorStatus?.executors.find(
-      (e) => e.id === (executorStatus?.active_executor === 'pi' ? 'pi' : 'claude')
+      (e) => e.id === 'pi'
     )?.effort || 'high';
 
   return (
@@ -126,13 +122,13 @@ export const CockpitCommandRibbon: React.FC<CockpitCommandRibbonProps> = ({
         <button
           type="button"
           onClick={onOpenExecutorConfig}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-orange-500/30 bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 text-[11px] font-medium hover:bg-orange-100 dark:hover:bg-orange-900/50 transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-blue-500/30 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[11px] font-medium hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
           title={tx('点击配置 Unified API / 执行器', 'Click to configure Unified API and Substrates')}
         >
-          <Flame className="w-3.5 h-3.5 text-orange-500" />
+          <Cpu className="w-3.5 h-3.5 text-blue-500" />
           <span className="font-semibold">{activeExecutorLabel}</span>
-          {activeExecutorLabel.includes('Claude') && (
-            <span className="text-[10px] px-1 rounded bg-orange-200 dark:bg-orange-900/60 font-bold uppercase">
+          {activeExecutorLabel.includes('Pi') && (
+            <span className="text-[10px] px-1 rounded bg-pink-200 dark:bg-pink-900/60 font-bold uppercase text-pink-800 dark:text-pink-200">
               {activeEffort}
             </span>
           )}

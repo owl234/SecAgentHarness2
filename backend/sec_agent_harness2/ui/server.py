@@ -26,7 +26,6 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import api
 from . import scanner
 from .runner import ExecutionManager
 
@@ -72,7 +71,7 @@ class ExecutorConfigRequest(BaseModel):
 
 
 class ExecutorProbeRequest(BaseModel):
-    target: str = Field(default="unified", description="unified | claude | oc | cx | vertex")
+    target: str = Field(default="unified", description="unified | oc | pi | vertex")
     base_url: str | None = None
     api_key: str | None = None
     protocol: str | None = None
@@ -85,19 +84,6 @@ class ExecutorModelsRequest(BaseModel):
     protocol: str | None = None
 
 
-class BridgeControlRequest(BaseModel):
-    upstream: str | None = None
-    api_key: str | None = None
-    host: str = Field(default="0.0.0.0")
-    port: int = Field(default=0)
-    auto_bind_codex: bool = Field(default=True)
-
-
-class BridgeReprobeRequest(BaseModel):
-    base_url: str | None = None
-    api_key: str | None = None
-
-
 class DemoLaunchRequest(BaseModel):
     output: str = Field(default="runs/demo", description="Output directory 输出目录")
     k: int = Field(default=2, ge=1, description="Budget scale k 递归预算")
@@ -107,7 +93,7 @@ class DemoLaunchRequest(BaseModel):
 class SweepLaunchRequest(BaseModel):
     bench: str = Field(default="jb", description="jb | wb | lab 基准")
     subset: str | None = Field(default=None, description="office | web | code (仅 wb 必填)")
-    substrate: str = Field(default="oc", description="oc | cx | claude | pi 执行基座")
+    substrate: str = Field(default="oc", description="oc | pi 执行基座")
     k: int = Field(default=1, ge=1)
     modes: str = Field(default="parallel,sequential")
     split: str = Field(default="all")
@@ -118,16 +104,13 @@ class SweepLaunchRequest(BaseModel):
     dry_run: bool = Field(default=False)
     model: str | None = Field(default=None)
     effort: str | None = Field(default=None)
-    claude_model: str | None = Field(default=None)
-    claude_thinking_budget: int | None = Field(default=None)
-    claude_api_key: str | None = Field(default=None)
 
 
 class JudgeLaunchRequest(BaseModel):
     run_id: str | None = Field(default=None, description="Optional run_id to infer bench/substrate/k")
     bench: str | None = Field(default=None, description="jb | wb | lab 基准")
     subset: str | None = Field(default=None, description="office | web | code (仅 wb 必填)")
-    substrate: str | None = Field(default=None, description="oc | cx | claude | pi 执行基座")
+    substrate: str | None = Field(default=None, description="oc | pi 执行基座")
     k: int | None = Field(default=None, ge=1)
     modes: str = Field(default="parallel,sequential")
     seed: int | None = Field(default=None)
@@ -241,25 +224,16 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
             args.append("--dry-run")
 
         extra_env: dict[str, str] = {}
-        eff_model = (req.model or req.claude_model or "").strip()
-        if req.claude_api_key:
-            extra_env["ANTHROPIC_API_KEY"] = req.claude_api_key
+        eff_model = (req.model or "").strip()
         if eff_model:
-            if substrate_val == "claude":
-                extra_env["SEC_AGENT_HARNESS2_CLAUDE_MODEL"] = eff_model
-            elif substrate_val == "oc":
+            if substrate_val == "oc":
                 extra_env["SEC_AGENT_HARNESS2_SOLVER_MODEL"] = eff_model
-            elif substrate_val == "cx":
-                extra_env["SEC_AGENT_HARNESS2_CODEX_MODEL"] = eff_model
             elif substrate_val == "pi":
                 extra_env["SEC_AGENT_HARNESS2_PI_MODEL"] = eff_model
-        if req.effort:
-            if substrate_val == "pi":
-                extra_env["SEC_AGENT_HARNESS2_PI_EFFORT"] = req.effort
-            else:
-                extra_env["SEC_AGENT_HARNESS2_CLAUDE_EFFORT"] = req.effort
-        if substrate_val in ("claude", "pi"):
-            extra_env["SEC_AGENT_HARNESS2_DEFAULT_EXECUTOR"] = substrate_val
+        if req.effort and substrate_val == "pi":
+            extra_env["SEC_AGENT_HARNESS2_PI_EFFORT"] = req.effort
+        if substrate_val == "pi":
+            extra_env["SEC_AGENT_HARNESS2_DEFAULT_EXECUTOR"] = "pi"
 
         job = await runner.start_job("sweep", args, extra_env=extra_env)
         return {"status": "started", "job": job}
@@ -368,7 +342,7 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
             raise HTTPException(status_code=500, detail=f"装配组件失败: {exc}")
 
     # -----------------------------
-    # Executor & Engine Management APIs (Unified API, Claude, OpenCode, Codex, Vertex)
+    # Executor & Engine Management APIs (Unified API, OpenCode, Pi, Vertex)
     # -----------------------------
     @app.get("/api/executors")
     async def get_executors():
@@ -400,8 +374,6 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
                     else bare_model
                 )
                 updates["SEC_AGENT_HARNESS2_SOLVER_MODEL"] = oc_model
-                updates["SEC_AGENT_HARNESS2_CODEX_MODEL"] = bare_model
-                updates["SEC_AGENT_HARNESS2_CLAUDE_MODEL"] = bare_model
                 updates["SEC_AGENT_HARNESS2_PI_MODEL"] = bare_model
                 updates["SEC_AGENT_HARNESS2_IMPROVER_MODEL"] = oc_model
                 if req.judge_model is not None and req.judge_model.strip():
@@ -428,26 +400,9 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
             if req.protocol is not None:
                 proto = req.protocol.strip()
                 updates["SEC_AGENT_HARNESS2_API_PROTOCOL"] = proto
-                updates["SEC_AGENT_HARNESS2_CLAUDE_PROTOCOL"] = proto
                 updates["SEC_AGENT_HARNESS2_PI_PROTOCOL"] = proto
             if req.effort is not None:
-                updates["SEC_AGENT_HARNESS2_CLAUDE_EFFORT"] = req.effort.strip()
                 updates["SEC_AGENT_HARNESS2_PI_EFFORT"] = req.effort.strip()
-        elif req.executor_id == "claude":
-            if eff_base is not None:
-                updates["SEC_AGENT_HARNESS2_CLAUDE_BASE_URL"] = eff_base
-            if req.api_key:
-                updates["SEC_AGENT_HARNESS2_CLAUDE_API_KEY"] = req.api_key
-                if not eff_base and not os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_BASE_URL"):
-                    updates["ANTHROPIC_API_KEY"] = req.api_key
-            if req.model is not None:
-                updates["SEC_AGENT_HARNESS2_CLAUDE_MODEL"] = req.model
-            if req.protocol is not None:
-                updates["SEC_AGENT_HARNESS2_CLAUDE_PROTOCOL"] = req.protocol
-            if req.effort is not None:
-                updates["SEC_AGENT_HARNESS2_CLAUDE_EFFORT"] = req.effort
-            if req.cli_path is not None:
-                updates["SEC_AGENT_HARNESS2_CLAWGOD_PATH"] = req.cli_path
         elif req.executor_id == "oc":
             if eff_base is not None:
                 updates["SEC_AGENT_HARNESS2_OPENCODE_BASE_URL"] = eff_base
@@ -457,15 +412,6 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
                 updates["SEC_AGENT_HARNESS2_SOLVER_MODEL"] = req.model
             if req.protocol is not None:
                 updates["SEC_AGENT_HARNESS2_OPENCODE_PROTOCOL"] = req.protocol
-        elif req.executor_id == "cx":
-            if eff_base is not None:
-                updates["SEC_AGENT_HARNESS2_CODEX_BASE_URL"] = eff_base
-            if req.container_url is not None:
-                updates["SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL"] = req.container_url
-            if req.api_key:
-                updates["SEC_AGENT_HARNESS2_CODEX_API_KEY"] = req.api_key
-            if req.model is not None:
-                updates["SEC_AGENT_HARNESS2_CODEX_MODEL"] = req.model
         elif req.executor_id == "pi":
             if eff_base is not None:
                 updates["SEC_AGENT_HARNESS2_PI_BASE_URL"] = eff_base
@@ -528,97 +474,10 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
             workspace_root=workspace_root,
         )
 
-    @app.post("/api/executors/bridge/start")
-    async def start_responses_bridge(req: BridgeControlRequest):
-        scanner.sync_config_from_env()
-        upstream = (req.upstream or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", "")).strip()
-        api_key = (req.api_key or os.environ.get("SEC_AGENT_HARNESS2_API_KEY", "")).strip()
-        if not upstream:
-            raise HTTPException(
-                status_code=400,
-                detail="启动 Responses 转换桥需要上游 Chat Completions 地址 (upstream 或 SEC_AGENT_HARNESS2_API_BASE_URL)",
-            )
-        if not api_key:
-            raise HTTPException(
-                status_code=400,
-                detail="启动 Responses 转换桥需要上游 API Key (api_key 或 SEC_AGENT_HARNESS2_API_KEY)",
-            )
-        try:
-            meta = await runner.start_bridge(
-                upstream, api_key, host=req.host or "0.0.0.0", port=req.port
-            )
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"启动转换桥失败: {exc}")
-
-        if req.auto_bind_codex and meta.get("settings"):
-            settings = meta["settings"]
-            updates: dict[str, str | None] = {
-                "SEC_AGENT_HARNESS2_CODEX_BASE_URL": settings.get("SEC_AGENT_HARNESS2_CODEX_BASE_URL"),
-                "SEC_AGENT_HARNESS2_CODEX_API_KEY": settings.get("SEC_AGENT_HARNESS2_CODEX_API_KEY"),
-            }
-            if settings.get("SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL"):
-                updates["SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL"] = settings["SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL"]
-            scanner.persist_env_updates(workspace_root, updates, write_dotenv=True)
-
-        return {
-            "status": "started",
-            "bridge": meta,
-            "executors": scanner.get_executors_status(workspace_root, runner.get_bridge_info()),
-        }
-
-    @app.post("/api/executors/bridge/stop")
-    async def stop_responses_bridge():
-        res = await runner.stop_bridge()
-        return {
-            "status": "stopped",
-            "result": res,
-            "executors": scanner.get_executors_status(workspace_root, runner.get_bridge_info()),
-        }
-
-    @app.get("/api/executor/codex-bridge/status")
     @app.get("/api/executors/bridge/status")
-    async def get_codex_bridge_status():
+    async def get_bridge_status():
         scanner.sync_config_from_env()
         return scanner.get_bridge_status(workspace_root, runner.get_bridge_info())
-
-    @app.post("/api/executor/codex-bridge/reprobe")
-    @app.get("/api/executor/codex-bridge/reprobe")
-    @app.post("/api/executors/bridge/reprobe")
-    async def reprobe_codex_bridge(req: BridgeReprobeRequest | None = None):
-        scanner.sync_config_from_env()
-        from .. import install
-
-        base_url = ((req.base_url if req else None) or os.environ.get("SEC_AGENT_HARNESS2_API_BASE_URL", "")).strip()
-        api_key = ((req.api_key if req else None) or os.environ.get("SEC_AGENT_HARNESS2_API_KEY", "")).strip()
-        if not base_url:
-            raise HTTPException(status_code=400, detail="未配置基础地址 (Base URL)")
-
-        probe_res = api.probe_upstream_responses_capability(base_url, api_key)
-        bridge_json = workspace_root / "dependencies" / "codex" / "responses-bridge.json"
-        saved = scanner._safe_read_json(bridge_json) or {}
-        saved["wire_mode"] = probe_res.get("wire_mode", "bridge")
-        if "port" not in saved:
-            saved["port"] = 8765
-        if "key" not in saved:
-            import secrets
-
-            saved["key"] = secrets.token_urlsafe(24)
-        saved["host"] = saved.get("host", "0.0.0.0")
-        bridge_json.parent.mkdir(parents=True, exist_ok=True)
-        bridge_json.write_text(json.dumps(saved, indent=2) + "\n", encoding="utf-8")
-        bridge_json.chmod(0o600)
-
-        target_codex_home = workspace_root / "dependencies" / "codex" / "home"
-        try:
-            install.configure_codex(dry_run=False, home_dir=target_codex_home)
-        except Exception:
-            pass
-
-        return {
-            "probe": probe_res,
-            "bridge": scanner.get_bridge_status(workspace_root, runner.get_bridge_info()),
-            "executors": scanner.get_executors_status(workspace_root, runner.get_bridge_info()),
-        }
 
     # -----------------------------
     # Runs, Tasks & Artifacts APIs

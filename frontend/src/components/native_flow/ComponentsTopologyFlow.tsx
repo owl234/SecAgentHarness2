@@ -115,7 +115,7 @@ export const COMPONENT_NODES: FlowNode[] = [
     category: 'core',
     icon: Cpu,
     formula: '\\theta_{LLM} \\equiv \\text{Constant}',
-    descriptionZh: '基础大模型权重绝对保持冻结不变（如 GLM-5、Gemini 3.5 Flash、Claude），所有智能进化完全由外周 Harness 承载！',
+    descriptionZh: '基础大模型权重绝对保持冻结不变（如 GLM-5、Gemini 2.5 Pro、GPT-5），所有智能进化完全由外周 Harness 承载！',
     descriptionEn: 'Foundational model weights are strictly frozen with zero backprop; all intelligence emerges through surrounding harness.',
     invariantsZh: ['绝对无梯度更新', '跨基准评测保证公平基石'],
     invariantsEn: ['Absolute zero weight mutation', 'Cross-benchmark reproducibility anchor'],
@@ -202,8 +202,8 @@ export const COMPONENT_NODES: FlowNode[] = [
     id: 'target-sandbox',
     titleZh: 'Substrate 执行沙箱 (Sandbox)',
     titleEn: 'Substrate Execution Sandbox',
-    subtitleZh: 'OpenCode / Codex 隔离运行时',
-    subtitleEn: 'OpenCode / Codex Isolation',
+    subtitleZh: 'OpenCode / Pi 隔离运行时',
+    subtitleEn: 'OpenCode / Pi Isolation',
     badge: 'Isolated Target',
     category: 'substrate',
     icon: Server,
@@ -391,8 +391,8 @@ export const ComponentsTopologyFlow: React.FC<ComponentsTopologyFlowProps> = ({
             </h4>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               {isZh
-                ? '所有组件树物化（Materialize）至临时沙箱目录，由 OpenCode / Codex 执行原生命令交互。'
-                : 'Materialized harness trees deployed to isolated OpenCode / Codex sandboxes.'}
+                ? '所有组件树物化（Materialize）至临时沙箱目录，由 OpenCode / Pi 执行原生命令交互。'
+                : 'Materialized harness trees deployed to isolated OpenCode / Pi sandboxes.'}
             </p>
           </div>
         </div>

@@ -148,9 +148,6 @@ export async function launchSweep(payload: {
   dry_run?: boolean;
   model?: string;
   effort?: string;
-  claude_model?: string;
-  claude_thinking_budget?: number;
-  claude_api_key?: string;
 }): Promise<any> {
   const res = await fetch(`${BASE}/execute/sweep`, {
     method: 'POST',
@@ -329,7 +326,6 @@ export async function startResponsesBridge(payload: {
   api_key?: string;
   host?: string;
   port?: number;
-  auto_bind_codex?: boolean;
 }): Promise<{ status: string; bridge: any; executors: ExecutorStatusResponse }> {
   const res = await fetch(`${BASE}/executors/bridge/start`, {
     method: 'POST',
@@ -353,34 +349,6 @@ export async function stopResponsesBridge(): Promise<{
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Failed' }));
     throw new Error(err.detail || 'Failed to stop Responses Bridge');
-  }
-  return res.json();
-}
-
-export async function reprobeCodexBridge(payload?: {
-  base_url?: string;
-  api_key?: string;
-}): Promise<{
-  probe: any;
-  bridge: any;
-  executors?: ExecutorStatusResponse;
-}> {
-  const res = await fetch(`${BASE}/executor/codex-bridge/reprobe`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: payload ? JSON.stringify(payload) : undefined,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Failed' }));
-    throw new Error(err.detail || 'Failed to reprobe Responses endpoint');
-  }
-  return res.json();
-}
-
-export async function getCodexBridgeStatus(): Promise<any> {
-  const res = await fetch(`${BASE}/executor/codex-bridge/status`);
-  if (!res.ok) {
-    throw new Error('Failed to fetch Responses bridge status');
   }
   return res.json();
 }

@@ -37,10 +37,7 @@ from .. import api, config
 from ..core import runmark as RM
 from ..core import tree as HT
 from ..core.spec import BenchPrompts, BenchSpec, resolve_channel_model
-from ..install import codex_config_error
 from ..substrate.base import Install, RunRequest
-from ..substrate.claude import ClaudeSubstrate, find_claude_binary
-from ..substrate.codex import CodexSubstrate
 from ..substrate.opencode import OUTPUT_TOKEN_MAX, OpencodeSubstrate
 from ..substrate.pi import PiSubstrate, find_pi_binary
 from .tasks import discover, select
@@ -49,12 +46,8 @@ _RUNNER_DIR = config.THIRD_PARTY / "jb_runner"
 _STORE_SEED_LOCK = threading.Lock()
 
 OC_RUNNER = Path(__file__).resolve().parent / "jb_opencode_runner.py"
-CX_RUNNER = _RUNNER_DIR / "run_benchmark_codex_cli_adapt.sh"
-CLAUDE_RUNNER = _RUNNER_DIR / "run_benchmark_claude_cli_adapt.sh"
 PI_RUNNER = _RUNNER_DIR / "run_benchmark_pi_cli_adapt.sh"
 OC_BASE_HARNESS = _RUNNER_DIR / "harness_baseline_oc"
-CX_BASE_HARNESS = _RUNNER_DIR / "codex_base_harness"
-CLAUDE_BASE_HARNESS = _RUNNER_DIR / "claude_base_harness"
 PI_BASE_HARNESS = _RUNNER_DIR / "pi_base_harness"
 
 
@@ -502,12 +495,10 @@ def render_opencode_tree(staged: Path, render_dir: Path, ctx: dict) -> None:
 
 _INSTALL_MODE = {
     "oc": "workspace_agents_md",
-    "cx": "codex_root",
-    "claude": "claude_root",
     "pi": "pi_root",
 }
 
-_DEFAULT_TIMEOUT = {"oc": 2400, "cx": 3600, "claude": 3600, "pi": 3600}
+_DEFAULT_TIMEOUT = {"oc": 2400, "pi": 3600}
 
 
 def _channels() -> dict:
@@ -519,7 +510,7 @@ def _channels() -> dict:
 def make_spec(substrate: str) -> BenchSpec:
     if substrate not in _INSTALL_MODE:
         raise ValueError(
-            f"JobBench substrate must be 'oc', 'cx', 'claude', or 'pi', got {substrate!r}"
+            f"JobBench substrate must be 'oc' or 'pi', got {substrate!r}"
         )
     return BenchSpec(
         name="jb",
@@ -529,7 +520,7 @@ def make_spec(substrate: str) -> BenchSpec:
         channels=_channels(),
         domain_word="profession",
         leak_globs=("RUBRICS.json", "eval_result/**", "expected/**", "reference/**"),
-        allow_subagents=(substrate in ("oc", "claude", "pi")),
+        allow_subagents=True,
         obs_trunc=config.JB_OBS_TRUNC,
         proposer_deliverables="contents",
     )
@@ -648,18 +639,12 @@ class JobBenchAdapter:
         if substrate == "oc":
             launcher = self._launch_opencode
             self.substrate = OpencodeSubstrate(launcher=launcher)
-        elif substrate == "cx":
-            launcher = self._launch_codex
-            self.substrate = CodexSubstrate(launcher=launcher)
-        elif substrate == "claude":
-            launcher = self._launch_claude
-            self.substrate = ClaudeSubstrate(launcher=launcher)
         elif substrate == "pi":
             launcher = self._launch_pi
             self.substrate = PiSubstrate(launcher=launcher)
         else:
             raise ValueError(
-                f"JobBench substrate must be 'oc', 'cx', 'claude', or 'pi', got {substrate!r}"
+                f"JobBench substrate must be 'oc' or 'pi', got {substrate!r}"
             )
         self.timeout = int(timeout or _DEFAULT_TIMEOUT[substrate])
         self.store = Path(store_root) if store_root else config.RUNS / "jb" / "dataset"
@@ -831,56 +816,6 @@ class JobBenchAdapter:
         self._run_runner(OC_RUNNER, env, wall=2 * t + 600, label=label)
         return [self._require_artifacts(task_id, label)]
 
-    def _launch_codex(self, req: RunRequest, install: Install) -> list[Path]:
-        task_id, label, t = self._launch_common(req)
-        self.substrate.preflight()
-        codex_home = config.CODEX_HOME_DIR
-        stale = codex_config_error()
-        if stale is not None:
-            raise RuntimeError(stale)
-        endpoint = api.codex()
-        codex_key = endpoint.api_key if endpoint and endpoint.api_key else config.VERTEX_PROXY_KEY
-        env = self.substrate.exec_env(os.environ, codex_home=codex_home)
-        env.update(
-            {
-                "SEC_AGENT_HARNESS2_CODEX_BIN": str(Path(config.CODEX_DIST) / "codex"),
-                "TASK_IDS": task_id,
-                "LABEL": label,
-                "HARNESS_RENDER_DIR": str(install.staging_dir),
-                "TASKS_BASE_DIR": str(self.store),
-                "BENCHMARK_MODELS": config.SOLVER_MODEL_CX,
-                "MAX_CONCURRENT_PER_MODEL": "1",
-                "TIMEOUT_PER_TASK": str(t),
-            }
-        )
-        if codex_key:
-            env["VERTEX_PROXY_KEY"] = codex_key
-        self._run_runner(CX_RUNNER, env, wall=t + 600, label=label)
-        return [self._require_artifacts(task_id, label)]
-
-    def _launch_claude(self, req: RunRequest, install: Install) -> list[Path]:
-        task_id, label, t = self._launch_common(req)
-        self.substrate.preflight()
-        binary = find_claude_binary()
-        model = os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_MODEL", config.SOLVER_MODEL_CLAUDE)
-        effort = os.environ.get("SEC_AGENT_HARNESS2_CLAUDE_EFFORT", "high")
-        env = self.substrate.exec_env(os.environ)
-        env.update(
-            {
-                "SEC_AGENT_HARNESS2_CLAUDE_BIN": str(binary),
-                "TASK_IDS": task_id,
-                "LABEL": label,
-                "HARNESS_RENDER_DIR": str(install.staging_dir),
-                "TASKS_BASE_DIR": str(self.store),
-                "BENCHMARK_MODELS": model,
-                "REASONING_EFFORT": effort,
-                "MAX_CONCURRENT_PER_MODEL": "1",
-                "TIMEOUT_PER_TASK": str(t),
-            }
-        )
-        self._run_runner(CLAUDE_RUNNER, env, wall=t + 600, label=label)
-        return [self._require_artifacts(task_id, label)]
-
     def _launch_pi(self, req: RunRequest, install: Install) -> list[Path]:
         task_id, label, t = self._launch_common(req)
         self.substrate.preflight()
@@ -1028,14 +963,7 @@ class JobBenchAdapter:
         return str(self._extract(d)["flat"]) if d.is_dir() else ""
 
     def base_harness(self) -> Path:
-        if self.substrate.name == "oc":
-            base = OC_BASE_HARNESS
-        elif self.substrate.name == "claude":
-            base = CLAUDE_BASE_HARNESS
-        elif self.substrate.name == "pi":
-            base = PI_BASE_HARNESS
-        else:
-            base = CX_BASE_HARNESS
+        base = OC_BASE_HARNESS if self.substrate.name == "oc" else PI_BASE_HARNESS
         if not HT.is_tree(self.substrate.surface(), base):
             raise FileNotFoundError(
                 f"JobBench base harness missing or not a {self.substrate.surface().name} "
@@ -1056,19 +984,6 @@ class JobBenchAdapter:
             raise RuntimeError(
                 f"upstream JobBench judge missing at {judge_py}; run scripts/setup_benchmark.py jb"
             )
-        if self.substrate.name == "cx":
-            endpoint = api.codex()
-            if endpoint is None or not endpoint.api_key:
-                raise config.ConfigError(
-                    "SEC_AGENT_HARNESS2_CODEX_API_KEY (or SEC_AGENT_HARNESS2_API_KEY) is required for JB codex "
-                    "cells; see .env.example"
-                )
-            # The rollout reads the endpoint from CODEX_HOME/config.toml, not from the
-            # environment the substrate preflight just probed; refuse to report ready
-            # for an endpoint the run would never contact.
-            stale = codex_config_error()
-            if stale is not None:
-                raise RuntimeError(stale)
         py = config.JB_JUDGE_PYTHON
         remedy = "python scripts/setup_benchmark.py jb"
         if not py.is_file():
@@ -1261,9 +1176,5 @@ __all__ = [
     "compose_agent_body",
     "render_opencode_tree",
     "OC_RUNNER",
-    "CX_RUNNER",
-    "CLAUDE_RUNNER",
     "OC_BASE_HARNESS",
-    "CX_BASE_HARNESS",
-    "CLAUDE_BASE_HARNESS",
 ]

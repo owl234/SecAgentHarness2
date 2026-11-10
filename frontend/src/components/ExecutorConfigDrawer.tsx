@@ -4,9 +4,7 @@ import {
   X,
   CheckCircle2,
   AlertCircle,
-  Terminal,
   RefreshCw,
-  Flame,
   Bot,
   Zap,
   Globe,
@@ -46,13 +44,12 @@ interface ExecutorConfigDrawerProps {
 }
 
 const DEFAULT_RECOMMENDED_MODELS = [
-  'claude-sonnet-4-6',
+  'gemini-2.5-pro',
   'gpt-5.4',
   'deepseek-chat',
-  'gemini-2.5-pro',
   'gpt-4o',
-  'claude-3-7-sonnet-20250219',
   'o3-mini',
+  'qwen-2.5-coder-32b',
 ];
 
 export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
@@ -135,9 +132,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
   if (!isOpen) return null;
 
   const unifiedCfg = executorsData?.unified_config;
-  const claudeSub = executorsData?.executors.find((e) => e.id === 'claude');
   const ocSub = executorsData?.executors.find((e) => e.id === 'oc');
-  const cxSub = executorsData?.executors.find((e) => e.id === 'cx');
   const piSub = executorsData?.executors.find((e) => e.id === 'pi');
 
   const hasApiKey = Boolean(form.unifiedApiKey || unifiedCfg?.api_key_configured);
@@ -250,7 +245,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
         api_key: form.unifiedApiKey ? form.unifiedApiKey.trim() : undefined,
         model: bareModel,
         protocol: form.unifiedProtocol !== undefined ? form.unifiedProtocol.trim() : '',
-        effort: form.claudeEffort,
+        effort: form.piEffort,
         judge_model: form.judgeModel.trim() || undefined,
         judge_base_url: form.judgeBaseUrl !== undefined ? form.judgeBaseUrl.trim() : '',
         judge_api_key: form.judgeApiKey ? form.judgeApiKey.trim() : undefined,
@@ -265,7 +260,6 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
         ),
         'success'
       );
-      if (onExecutorChanged) onExecutorChanged();
       if (onExecutorChanged) onExecutorChanged();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -308,7 +302,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                 {tx(
-                  '配置一组统一 API 与模型，自动编译分发至项目支持的所有执行套件（OpenCode / Codex / Claude / 改进器 / 裁判）',
+                  '配置一组统一 API 与模型，自动编译分发至项目支持的所有执行套件（OpenCode / Pi / 改进器 / 裁判）',
                   'Configure one unified API and model to automatically compile & dispatch to all supported harnesses'
                 )}
               </p>
@@ -555,7 +549,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                       setComboboxOpen(false);
                     }
                   }}
-                  placeholder={tx('输入或选择模型，例如: claude-sonnet-4-6', 'Type or select model, e.g. claude-sonnet-4-6')}
+                  placeholder={tx('输入或选择模型，例如: gemini-2.5-pro', 'Type or select model, e.g. gemini-2.5-pro')}
                   className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500 shadow-sm"
                 />
                 <button
@@ -668,47 +662,14 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
               {tx(
-                '保存后，所选模型将一次性编译并分发至项目所支持的全部 6 大基座与角色通道：',
-                'Upon save, the selected model compiles and dispatches to all 6 substrates & role channels:'
+                '保存后，所选模型将一次性编译并分发至项目所支持的全部 4 大基座与角色通道：',
+                'Upon save, the selected model compiles and dispatches to all 4 substrates & role channels:'
               )}
             </p>
 
             {/* Matrix Cards */}
             <div className="grid grid-cols-1 gap-2 text-xs">
-              {/* 1. Claude Code */}
-              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-orange-500/10 text-orange-500 border border-orange-500/20">
-                    <Flame className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                      <span>Claude Code (clawgod)</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                        {form.unifiedProtocol || 'anthropic'}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      {tx('派生模型: ', 'Mapped model: ')}
-                      <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">
-                        {activeModelDisplay}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 text-[11px]">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      claudeSub?.status === 'ready' ? 'bg-emerald-500' : 'bg-emerald-400'
-                    }`}
-                  />
-                  <span className="text-slate-600 dark:text-slate-400 font-medium">
-                    {tx('就绪', 'Ready')}
-                  </span>
-                </div>
-              </div>
-
-              {/* 2. OpenCode */}
+              {/* 1. OpenCode */}
               <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500 border border-blue-500/20">
@@ -741,43 +702,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                 </div>
               </div>
 
-              {/* 3. Codex */}
-              <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-                    <Terminal className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                      <span>Codex (cx)</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                        openai-responses
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      {tx('派生模型: ', 'Mapped model: ')}
-                      <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">
-                        {activeModelDisplay}
-                      </span>
-                      <span className="text-slate-400 text-[10px] ml-1.5">
-                        {tx('→ 自动写入 config.toml', '→ Written to config.toml')}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 text-[11px]">
-                  <span
-                    className={`w-2 h-2 rounded-full ${
-                      cxSub?.status === 'ready' ? 'bg-emerald-500' : 'bg-slate-400'
-                    }`}
-                  />
-                  <span className="text-slate-600 dark:text-slate-400 font-medium">
-                    {cxSub?.status === 'ready' ? tx('就绪', 'Ready') : tx('待配置', 'Pending')}
-                  </span>
-                </div>
-              </div>
-
-              {/* 4. Pi Coding Agent */}
+              {/* 2. Pi Coding Agent */}
               <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 rounded-lg bg-pink-500/10 text-pink-500 border border-pink-500/20">
@@ -813,7 +738,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                 </div>
               </div>
 
-              {/* 5. Improver */}
+              {/* 3. Improver */}
               <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-500 border border-purple-500/20">
@@ -842,7 +767,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                 </div>
               </div>
 
-              {/* 6. Judge */}
+              {/* 4. Judge */}
               <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500 border border-indigo-500/20">
@@ -890,8 +815,8 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                     {tx(
-                      'Claude 推理强度及独立裁判模型覆盖',
-                      'Claude reasoning effort and separate judge model override'
+                      'Pi 推理强度及独立裁判模型覆盖',
+                      'Pi reasoning effort and separate judge model override'
                     )}
                   </div>
                 </div>
@@ -903,19 +828,19 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
 
             {isAdvancedOpen && (
               <div className="p-4 space-y-4 border-t border-slate-200 dark:border-slate-800">
-                {/* 1. Claude Effort */}
+                {/* 1. Pi Effort */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    {tx('Claude Code 推理强度 (--effort)', 'Claude Code Reasoning Effort (--effort)')}
+                    {tx('Pi Coding Agent 推理与思考强度 (--thinking)', 'Pi Coding Agent Reasoning & Thinking (--thinking)')}
                   </label>
                   <div className="grid grid-cols-3 gap-2">
                     {(['low', 'medium', 'high'] as const).map((eff) => (
                       <button
                         key={eff}
                         type="button"
-                        onClick={() => updateForm({ claudeEffort: eff })}
+                        onClick={() => updateForm({ piEffort: eff })}
                         className={`py-1.5 text-xs font-medium rounded-xl border transition-all cursor-pointer ${
-                          form.claudeEffort === eff
+                          form.piEffort === eff
                             ? 'bg-blue-600 text-white border-blue-600 shadow-sm font-semibold'
                             : 'bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-slate-300'
                         }`}
@@ -926,8 +851,8 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1">
                     {tx(
-                      '控制 clawgod 在思考模式下的推理 token 预算深度。',
-                      'Controls the reasoning token depth for clawgod in thinking mode.'
+                      '控制 Pi 在思考模式下的推理深度与思考预算。',
+                      'Controls the reasoning depth and thinking budget for Pi.'
                     )}
                   </p>
                 </div>

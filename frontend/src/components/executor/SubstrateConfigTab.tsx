@@ -7,7 +7,7 @@ import {
   Key,
   FileCode2,
 } from 'lucide-react';
-import { BridgeStatus, ExecutorItem, UnifiedApiConfig } from '../../types';
+import { ExecutorItem, UnifiedApiConfig } from '../../types';
 import { DrawerTabId, ExecutorFormValues } from './executorTypes';
 import { useLang } from '../../i18n/LangContext';
 
@@ -15,15 +15,10 @@ interface SubstrateConfigTabProps {
   selectedTab: Exclude<DrawerTabId, 'unified'>;
   activeExecutor: ExecutorItem;
   unifiedCfg?: UnifiedApiConfig;
-  bridge?: BridgeStatus;
   form: ExecutorFormValues;
   updateForm: (patch: Partial<ExecutorFormValues>) => void;
   showApiKey: boolean;
   onToggleShowApiKey: () => void;
-  bridgeBusy?: boolean;
-  onStartBridge?: () => void;
-  onStopBridge?: () => void;
-  onReprobeBridge?: () => void;
 }
 
 export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
@@ -70,206 +65,6 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
       </div>
 
       {/* ------------------------------------------------------- */}
-      {/* CLAUDE SUBSTRATE CONFIGURATION                          */}
-      {/* ------------------------------------------------------- */}
-      {selectedTab === 'claude' && (
-        <div className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              {tx(
-                'Claude 模型 ID (SEC_AGENT_HARNESS2_CLAUDE_MODEL · 留空默认复用统一 API 模型)',
-                'Claude Model ID (SEC_AGENT_HARNESS2_CLAUDE_MODEL · blank inherits Unified API model)'
-              )}
-            </label>
-            <input
-              type="text"
-              value={form.claudeModel}
-              onChange={(e) => updateForm({ claudeModel: e.target.value })}
-              placeholder="claude-sonnet-4-6"
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-            />
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {activeExecutor.supported_models.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => updateForm({ claudeModel: m })}
-                  className={`px-2 py-0.5 text-[10px] font-mono rounded-md border cursor-pointer ${
-                    form.claudeModel === m
-                      ? 'bg-orange-500/15 text-orange-600 dark:text-orange-300 border-orange-500/40 font-semibold'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-orange-400'
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Reasoning Effort Selector */}
-          <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-amber-500" />
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  {tx(
-                    '推理强度档位 (SEC_AGENT_HARNESS2_CLAUDE_EFFORT · 传递为 clawgod --effort)',
-                    'Reasoning Effort (SEC_AGENT_HARNESS2_CLAUDE_EFFORT · passed as clawgod --effort)'
-                  )}
-                </span>
-              </div>
-              <span className="text-xs font-mono font-bold text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2.5 py-0.5 rounded-full border border-orange-500/20">
-                {form.claudeEffort.toUpperCase()}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-3 gap-2">
-              {(
-                [
-                  {
-                    id: 'low',
-                    label: tx('Low (轻量快速)', 'Low (Fast)'),
-                    desc: tx('低延迟快速验证', 'Low-latency verification'),
-                  },
-                  {
-                    id: 'medium',
-                    label: tx('Medium (均衡)', 'Medium (Balanced)'),
-                    desc: tx('兼顾速度与推理深度', 'Balanced speed & reasoning'),
-                  },
-                  {
-                    id: 'high',
-                    label: tx('High (推荐默认)', 'High (Recommended)'),
-                    desc: tx('深度思考与严密自检', 'Deep thinking & verification'),
-                  },
-                ] as const
-              ).map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  onClick={() => updateForm({ claudeEffort: opt.id })}
-                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                    form.claudeEffort === opt.id
-                      ? 'bg-orange-500/10 border-orange-500 text-orange-950 dark:text-orange-200 ring-1 ring-orange-500'
-                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                  }`}
-                >
-                  <div className="text-xs font-bold">{opt.label}</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{opt.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                {tx('专属端点覆盖 (SEC_AGENT_HARNESS2_CLAUDE_BASE_URL)', 'Endpoint Override (SEC_AGENT_HARNESS2_CLAUDE_BASE_URL)')}
-              </label>
-              <input
-                type="text"
-                value={form.claudeBaseUrl}
-                onChange={(e) => updateForm({ claudeBaseUrl: e.target.value })}
-                placeholder={
-                  unifiedCfg?.base_url
-                    ? tx(
-                        `留空默认继承统一 API (${unifiedCfg.base_url})`,
-                        `Blank inherits Unified API (${unifiedCfg.base_url})`
-                      )
-                    : 'https://api.anthropic.com'
-                }
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                {tx('线协议 (SEC_AGENT_HARNESS2_CLAUDE_PROTOCOL)', 'Wire Protocol (SEC_AGENT_HARNESS2_CLAUDE_PROTOCOL)')}
-              </label>
-              <select
-                value={form.claudeProtocol}
-                onChange={(e) => updateForm({ claudeProtocol: e.target.value })}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
-              >
-                <option value="">{tx('默认 (anthropic 原生 Messages)', 'Default (Anthropic Messages)')}</option>
-                <option value="anthropic">anthropic (Anthropic Messages API)</option>
-                <option value="openai-chat">
-                  {tx('openai-chat (启用 clawgod provider.json 转换代理)', 'openai-chat (clawgod provider.json proxy)')}
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5 text-slate-400" />
-                <span>
-                  {tx(
-                    '专属密钥覆盖 (SEC_AGENT_HARNESS2_CLAUDE_API_KEY / ANTHROPIC_API_KEY)',
-                    'API Key Override (SEC_AGENT_HARNESS2_CLAUDE_API_KEY / ANTHROPIC_API_KEY)'
-                  )}
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={onToggleShowApiKey}
-                className="text-[11px] text-blue-500 hover:underline cursor-pointer"
-              >
-                {showApiKey ? tx('隐藏密文', 'Hide Key') : tx('显示密文', 'Show Key')}
-              </button>
-            </div>
-            <input
-              type={showApiKey ? 'text' : 'password'}
-              value={form.claudeApiKey}
-              onChange={(e) => updateForm({ claudeApiKey: e.target.value })}
-              placeholder={
-                activeExecutor.api_key_configured
-                  ? tx(
-                      `已配置 (${activeExecutor.api_key_masked || '继承自统一API'}) · 留空保持不变`,
-                      `Configured (${activeExecutor.api_key_masked || 'Inherited'}) · Leave blank to keep`
-                    )
-                  : 'sk-ant-...'
-              }
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div className="bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
-            <div className="min-w-0 pr-2">
-              <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <Terminal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span>
-                  {tx(
-                    '项目隔离运行时 (dependencies/claude/bin/clawgod)',
-                    'Isolated CLI Runtime (dependencies/claude/bin/clawgod)'
-                  )}
-                </span>
-              </div>
-              <div className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
-                {activeExecutor.cli_available
-                  ? activeExecutor.cli_path
-                  : tx(
-                      '未安装 · 请运行 sec-agent-harness2 setup <bench> --substrate claude',
-                      'Not installed · Run sec-agent-harness2 setup <bench> --substrate claude'
-                    )}
-              </div>
-            </div>
-            <span
-              className={`px-2 py-0.5 rounded-md text-[10px] font-semibold shrink-0 ${
-                activeExecutor.cli_available
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-              }`}
-            >
-              {activeExecutor.cli_available
-                ? tx('clawgod 已就绪', 'clawgod Ready')
-                : tx('待安装', 'Missing')}
-            </span>
-          </div>
-        </div>
-      )}
-
-      {/* ------------------------------------------------------- */}
       {/* OPENCODE SUBSTRATE CONFIGURATION                        */}
       {/* ------------------------------------------------------- */}
       {selectedTab === 'oc' && (
@@ -285,7 +80,7 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
               type="text"
               value={form.ocModel}
               onChange={(e) => updateForm({ ocModel: e.target.value })}
-              placeholder="sec_agent_harness2/claude-sonnet-4-6"
+              placeholder="sec_agent_harness2/gemini-2.5-pro"
               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
             />
             <div className="flex flex-wrap gap-1.5 mt-2">
@@ -373,132 +168,15 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
               className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
             />
           </div>
-        </div>
-      )}
 
-      {/* ------------------------------------------------------- */}
-      {/* CODEX SUBSTRATE CONFIGURATION                           */}
-      {/* ------------------------------------------------------- */}
-      {selectedTab === 'cx' && (
-        <div className="space-y-4">
-          {/* Codex Model ID */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              {tx(
-                'Codex 模型 ID (SEC_AGENT_HARNESS2_CODEX_MODEL · 不带 provider 前缀)',
-                'Codex Model ID (SEC_AGENT_HARNESS2_CODEX_MODEL · without provider prefix)'
-              )}
-            </label>
-            <input
-              type="text"
-              value={form.cxModel}
-              onChange={(e) => updateForm({ cxModel: e.target.value })}
-              placeholder="gpt-5.4"
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-            />
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {activeExecutor.supported_models.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => updateForm({ cxModel: m })}
-                  className={`px-2 py-0.5 text-[10px] font-mono rounded-md border cursor-pointer ${
-                    form.cxModel === m
-                      ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 border-emerald-500/40 font-semibold'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-emerald-400'
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                {tx(
-                  '专属端点覆盖 (SEC_AGENT_HARNESS2_CODEX_BASE_URL)',
-                  'Endpoint Override (SEC_AGENT_HARNESS2_CODEX_BASE_URL)'
-                )}
-              </label>
-              <input
-                type="text"
-                value={form.cxBaseUrl}
-                onChange={(e) => updateForm({ cxBaseUrl: e.target.value })}
-                placeholder={
-                  unifiedCfg?.base_url
-                    ? tx(
-                        `留空默认继承统一 API (${unifiedCfg.base_url})`,
-                        `Blank inherits Unified API (${unifiedCfg.base_url})`
-                      )
-                    : 'https://api.openai.com/v1'
-                }
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                {tx(
-                  '容器内端点 (SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL · 可选)',
-                  'Container Endpoint (SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL)'
-                )}
-              </label>
-              <input
-                type="text"
-                value={form.cxContainerUrl}
-                onChange={(e) => updateForm({ cxContainerUrl: e.target.value })}
-                placeholder="http://host.docker.internal:8765/v1"
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-              />
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5 text-slate-400" />
-                <span>
-                  {tx(
-                    '专属密钥覆盖 (SEC_AGENT_HARNESS2_CODEX_API_KEY)',
-                    'API Key Override (SEC_AGENT_HARNESS2_CODEX_API_KEY)'
-                  )}
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={onToggleShowApiKey}
-                className="text-[11px] text-blue-500 hover:underline cursor-pointer"
-              >
-                {showApiKey ? tx('隐藏密文', 'Hide Key') : tx('显示密文', 'Show Key')}
-              </button>
-            </div>
-            <input
-              type={showApiKey ? 'text' : 'password'}
-              value={form.cxApiKey}
-              onChange={(e) => updateForm({ cxApiKey: e.target.value })}
-              placeholder={
-                activeExecutor.api_key_configured
-                  ? tx(
-                      `已配置 (${activeExecutor.api_key_masked || '继承自统一API'}) · 留空保持不变`,
-                      `Configured (${activeExecutor.api_key_masked || 'Inherited'}) · Leave blank to keep`
-                    )
-                  : tx('留空默认继承统一 API Key', 'Blank inherits Unified API Key')
-              }
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          {/* Project Isolated CLI runtime status */}
           <div className="bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
             <div className="min-w-0 pr-2">
               <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
                 <Terminal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>
                   {tx(
-                    '项目隔离运行时 (dependencies/codex/dist/codex)',
-                    'Isolated CLI Runtime (dependencies/codex/dist/codex)'
+                    '项目隔离运行时 (packages/cli/src/index.ts · Bun 1.4.4)',
+                    'Isolated CLI Runtime (packages/cli/src/index.ts · Bun 1.4.4)'
                   )}
                 </span>
               </div>
@@ -506,8 +184,8 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
                 {activeExecutor.cli_available
                   ? activeExecutor.cli_path
                   : tx(
-                      '未安装 · 请运行 sec-agent-harness2 setup <bench> --substrate codex',
-                      'Not installed · Run sec-agent-harness2 setup <bench> --substrate codex'
+                      '未安装 · 请运行 sec-agent-harness2 setup <bench> --substrate oc',
+                      'Not installed · Run sec-agent-harness2 setup <bench> --substrate oc'
                     )}
               </div>
             </div>
@@ -518,42 +196,7 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
                   : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
               }`}
             >
-              {activeExecutor.cli_available
-                ? tx('codex 已就绪', 'codex Ready')
-                : tx('待安装', 'Missing')}
-            </span>
-          </div>
-
-          {/* Config TOML status */}
-          <div className="bg-slate-50 dark:bg-slate-950 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
-            <div className="min-w-0 pr-2">
-              <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <FileCode2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span>{tx('CODEX_HOME/config.toml 状态校验', 'CODEX_HOME/config.toml Sync Status')}</span>
-              </div>
-              <div className="text-[11px] text-slate-400 font-mono mt-0.5 truncate">
-                {activeExecutor.config_toml_status === 'ok'
-                  ? tx(
-                      'dependencies/codex/home/config.toml 与当前环境变量完全一致',
-                      'dependencies/codex/home/config.toml matches current environment'
-                    )
-                  : activeExecutor.config_toml_error ||
-                    tx(
-                      '保存配置时将自动重新生成 config.toml',
-                      'config.toml will be regenerated upon saving'
-                    )}
-              </div>
-            </div>
-            <span
-              className={`px-2 py-0.5 rounded-md text-[10px] font-semibold shrink-0 ${
-                activeExecutor.config_toml_status === 'ok'
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-              }`}
-            >
-              {activeExecutor.config_toml_status === 'ok'
-                ? tx('已同步', 'Synced')
-                : tx('待同步', 'Pending')}
+              {activeExecutor.cli_available ? tx('已就绪', 'Ready') : tx('待安装', 'Missing')}
             </span>
           </div>
         </div>
@@ -810,7 +453,7 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
                 value={form.judgeModel}
                 onChange={(e) => updateForm({ judgeModel: e.target.value })}
                 placeholder="gemini-2.5-pro"
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
+                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-purple-500"
               />
               <div className="flex flex-wrap gap-1.5 mt-1.5">
                 {activeExecutor.supported_models.map((m) => (

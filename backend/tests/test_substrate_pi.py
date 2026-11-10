@@ -273,7 +273,7 @@ def test_pi_materialise_invalid_mode(tmp_path):
     spec = BenchSpec(
         name="test",
         runs_root=tmp_path / "runs",
-        install_mode="claude_root",
+        install_mode="workspace_config",
         prompts=None,
         channels={"proposer": dummy_ch, "selector": dummy_ch},
     )

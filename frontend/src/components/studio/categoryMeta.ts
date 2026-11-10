@@ -335,11 +335,11 @@ export const CATEGORY_META: Record<ComponentCategory, CategoryMetaItem> = {
     quotaChars: 4000,
     invariantsZh: [
       '必须是合法的 JSON 配置文件 (包含 mcpServers 键值映射)',
-      '跨 Claude / OpenCode / Codex 三大基座自动翻译为原生 MCP 配置契约',
+      '跨 OpenCode / Pi 双基座自动翻译为原生 MCP 配置契约',
     ],
     invariantsEn: [
       'Must be valid JSON configuration containing mcpServers definitions',
-      'Automatically translated across Claude, OpenCode, and Codex substrates',
+      'Automatically translated across OpenCode and Pi substrates',
     ],
     walkthroughStep: 8,
     walkthroughTitleZh: '步骤 9/9 · 桥接 MCP 协议服务与隔离沙箱物化 (c9 ➔ Sandbox)',

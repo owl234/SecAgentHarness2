@@ -211,16 +211,18 @@ class UITests(unittest.TestCase):
         self.assertIn("unified_config", data)
         self.assertIn("bridge", data)
         executors = data["executors"]
-        claude_exec = next((e for e in executors if e["id"] == "claude"), None)
-        self.assertIsNotNone(claude_exec)
-        self.assertIn("claude-sonnet-4-6", claude_exec["supported_models"])
-        self.assertTrue(len(claude_exec["capabilities"]) >= 3)
+        oc_exec = next((e for e in executors if e["id"] == "oc"), None)
+        self.assertIsNotNone(oc_exec)
+        self.assertTrue(len(oc_exec["capabilities"]) >= 2)
+        pi_exec = next((e for e in executors if e["id"] == "pi"), None)
+        self.assertIsNotNone(pi_exec)
+        self.assertTrue(len(pi_exec["capabilities"]) >= 3)
 
         # Test isolated config persistence in a temporary workspace so real .env is untouched
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_root = Path(tmpdir)
             (tmp_root / ".env.example").write_text(
-                "# Example\n# SEC_AGENT_HARNESS2_API_BASE_URL=\n# SEC_AGENT_HARNESS2_CLAUDE_MODEL=\n# SEC_AGENT_HARNESS2_CLAUDE_EFFORT=\n",
+                "# Example\n# SEC_AGENT_HARNESS2_API_BASE_URL=\n# SEC_AGENT_HARNESS2_PI_MODEL=\n# SEC_AGENT_HARNESS2_PI_EFFORT=\n",
                 encoding="utf-8",
             )
             tmp_app = create_app(workspace_root=tmp_root, runs_root=self.runs_root)
@@ -228,8 +230,8 @@ class UITests(unittest.TestCase):
             saved_env = dict(os.environ)
             try:
                 cfg_payload = {
-                    "executor_id": "claude",
-                    "model": "claude-sonnet-4-6",
+                    "executor_id": "pi",
+                    "model": "gpt-5.4",
                     "effort": "high",
                     "persist_dotenv": True,
                 }
@@ -239,8 +241,8 @@ class UITests(unittest.TestCase):
                 self.assertEqual(body["status"], "updated")
                 self.assertIn(".env", body["applied"]["synced_files"])
                 env_text = (tmp_root / ".env").read_text(encoding="utf-8")
-                self.assertIn("SEC_AGENT_HARNESS2_CLAUDE_MODEL=claude-sonnet-4-6", env_text)
-                self.assertIn("SEC_AGENT_HARNESS2_CLAUDE_EFFORT=high", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_PI_MODEL=gpt-5.4", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_PI_EFFORT=high", env_text)
 
                 # Test unified config update
                 res_uni = tmp_client.post(
@@ -259,33 +261,12 @@ class UITests(unittest.TestCase):
                     "https://example.invalid/v1",
                 )
 
-                # Test codex-bridge status endpoint
-                res_status = tmp_client.get("/api/executor/codex-bridge/status")
+                # Test bridge status endpoint
+                res_status = tmp_client.get("/api/executors/bridge/status")
                 self.assertEqual(res_status.status_code, 200)
                 status_data = res_status.json()
                 self.assertIn("wire_mode", status_data)
-                self.assertIn("local_url", status_data)
-                self.assertIn("container_url", status_data)
-                self.assertTrue(status_data["auth_enabled"])
-
-                # Test codex-bridge reprobe endpoint (mocking probe)
-                from sec_agent_harness2 import api
-                monkeypatch = unittest.mock.patch.object(
-                    api,
-                    "probe_upstream_responses_capability",
-                    return_value={"wire_mode": "bridge", "status_code": 404, "latency_ms": 12, "message": "Bridge managed", "url": "https://example.invalid/v1/responses"}
-                )
-                with monkeypatch:
-                    res_probe = tmp_client.post(
-                        "/api/executor/codex-bridge/reprobe",
-                        json={"base_url": "https://example.invalid/v1", "api_key": "test-key"},
-                    )
-                    self.assertEqual(res_probe.status_code, 200)
-                    probe_body = res_probe.json()
-                    self.assertIn("probe", probe_body)
-                    self.assertEqual(probe_body["probe"]["wire_mode"], "bridge")
-                    self.assertEqual(probe_body["bridge"]["wire_mode"], "bridge")
-                    self.assertTrue(probe_body["bridge"]["key_configured"])
+                self.assertFalse(status_data["running"])
             finally:
                 os.environ.clear()
                 os.environ.update(saved_env)
@@ -297,10 +278,10 @@ class UITests(unittest.TestCase):
         self.assertEqual(cell_lab["substrate"], "oc")
         self.assertEqual(cell_lab["k"], 1)
 
-        cell_wb = scanner.infer_run_cell(self.runs_root, "wb-office-claude-agg2-20261026T120000Z")
+        cell_wb = scanner.infer_run_cell(self.runs_root, "wb-office-pi-agg2-20261026T120000Z")
         self.assertEqual(cell_wb["bench"], "wb")
         self.assertEqual(cell_wb["subset"], "office")
-        self.assertEqual(cell_wb["substrate"], "claude")
+        self.assertEqual(cell_wb["substrate"], "pi")
         self.assertEqual(cell_wb["k"], 2)
 
         # Offline demo runs should return a friendly 400 when passed to /api/execute/judge
@@ -316,14 +297,14 @@ class UITests(unittest.TestCase):
             "data": [
                 {"id": "gpt-4o"},
                 {"id": "deepseek-chat"},
-                {"id": "claude-3-7-sonnet"}
+                {"id": "gemini-2.5-pro"}
             ]
         }).encode("utf-8")
         mock_urlopen.return_value.__enter__.return_value = mock_resp
 
         res = scanner.fetch_endpoint_models(base_url="https://api.openai.com/v1", api_key="sk-test")
         self.assertTrue(res["ok"])
-        self.assertEqual(res["models"], ["claude-3-7-sonnet", "deepseek-chat", "gpt-4o"])
+        self.assertEqual(res["models"], ["deepseek-chat", "gemini-2.5-pro", "gpt-4o"])
         self.assertIn("成功获取 3 个可用模型", res["message"])
 
     @unittest.mock.patch("urllib.request.urlopen")
@@ -332,15 +313,15 @@ class UITests(unittest.TestCase):
         mock_resp.status = 200
         mock_resp.read.return_value = json.dumps({
             "data": [
-                {"type": "model", "id": "claude-sonnet-4-6"},
-                {"type": "model", "id": "claude-opus-4-6"}
+                {"type": "model", "id": "model-b"},
+                {"type": "model", "id": "model-a"}
             ]
         }).encode("utf-8")
         mock_urlopen.return_value.__enter__.return_value = mock_resp
 
         res = scanner.fetch_endpoint_models(base_url="https://api.anthropic.com", api_key="sk-ant", protocol="anthropic")
         self.assertTrue(res["ok"])
-        self.assertEqual(res["models"], ["claude-opus-4-6", "claude-sonnet-4-6"])
+        self.assertEqual(res["models"], ["model-a", "model-b"])
 
     @unittest.mock.patch("urllib.request.urlopen")
     def test_fetch_endpoint_models_auth_error(self, mock_urlopen):
@@ -393,8 +374,7 @@ class UITests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_root = Path(tmp_dir)
             (tmp_root / ".env").write_text(
-                "SEC_AGENT_HARNESS2_CODEX_MODEL=stale-codex\n"
-                "SEC_AGENT_HARNESS2_CLAUDE_MODEL=stale-claude\n"
+                "SEC_AGENT_HARNESS2_PI_MODEL=stale-pi\n"
                 "SEC_AGENT_HARNESS2_SOLVER_MODEL=stale-oc\n",
                 encoding="utf-8",
             )
@@ -417,8 +397,6 @@ class UITests(unittest.TestCase):
                 env_text = (tmp_root / ".env").read_text(encoding="utf-8")
                 self.assertIn("SEC_AGENT_HARNESS2_API_MODEL=gpt-5.4", env_text)
                 self.assertIn("SEC_AGENT_HARNESS2_SOLVER_MODEL=sec_agent_harness2/gpt-5.4", env_text)
-                self.assertIn("SEC_AGENT_HARNESS2_CODEX_MODEL=gpt-5.4", env_text)
-                self.assertIn("SEC_AGENT_HARNESS2_CLAUDE_MODEL=gpt-5.4", env_text)
                 self.assertIn("SEC_AGENT_HARNESS2_PI_MODEL=gpt-5.4", env_text)
                 self.assertIn("SEC_AGENT_HARNESS2_IMPROVER_MODEL=sec_agent_harness2/gpt-5.4", env_text)
                 self.assertIn("SEC_AGENT_HARNESS2_JUDGE_MODEL=gpt-5.4", env_text)
@@ -427,14 +405,14 @@ class UITests(unittest.TestCase):
                 os.environ.update(saved_env)
                 scanner.sync_config_from_env()
 
-    def test_solver_model_claude_defaults_to_api_model(self):
+    def test_solver_model_pi_defaults_to_api_model(self):
         import os
         saved_env = dict(os.environ)
         try:
             os.environ["SEC_AGENT_HARNESS2_API_MODEL"] = "my-custom-model"
-            os.environ.pop("SEC_AGENT_HARNESS2_CLAUDE_MODEL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_PI_MODEL", None)
             scanner.sync_config_from_env()
-            self.assertEqual(C.SOLVER_MODEL_CLAUDE, "my-custom-model")
+            self.assertEqual(C.SOLVER_MODEL_PI, "my-custom-model")
         finally:
             os.environ.clear()
             os.environ.update(saved_env)
@@ -456,17 +434,16 @@ class UITests(unittest.TestCase):
                         "executor_id": "unified",
                         "base_url": "https://api.unified.example/v1",
                         "api_key": "sk-unified-123",
-                        "model": "sec_agent_harness2/claude-sonnet-4-6",
+                        "model": "sec_agent_harness2/gemini-2.5-pro",
                         "persist_dotenv": True,
                     },
                 )
                 self.assertEqual(res.status_code, 200)
                 env_text = (tmp_root / ".env").read_text(encoding="utf-8")
-                self.assertIn("SEC_AGENT_HARNESS2_API_MODEL=claude-sonnet-4-6", env_text)
-                self.assertIn("SEC_AGENT_HARNESS2_CODEX_MODEL=claude-sonnet-4-6", env_text)
-                self.assertIn("SEC_AGENT_HARNESS2_CLAUDE_MODEL=claude-sonnet-4-6", env_text)
-                self.assertIn("SEC_AGENT_HARNESS2_JUDGE_MODEL=claude-sonnet-4-6", env_text)
-                self.assertIn("SEC_AGENT_HARNESS2_SOLVER_MODEL=sec_agent_harness2/claude-sonnet-4-6", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_API_MODEL=gemini-2.5-pro", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_PI_MODEL=gemini-2.5-pro", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_JUDGE_MODEL=gemini-2.5-pro", env_text)
+                self.assertIn("SEC_AGENT_HARNESS2_SOLVER_MODEL=sec_agent_harness2/gemini-2.5-pro", env_text)
                 self.assertNotIn("sec_agent_harness2/sec_agent_harness2/", env_text)
             finally:
                 os.environ.clear()

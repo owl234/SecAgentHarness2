@@ -42,15 +42,13 @@ from ..core.selection import order_graded_first
 from ..core.spec import BenchPrompts, BenchSpec, resolve_channel_model
 from ..substrate import opencode as OC
 from ..substrate.base import Install, RunRequest
-from ..substrate.claude import CLAUDE_SURFACE, ClaudeSubstrate
-from ..substrate.codex import CODEX_SURFACE, CodexSubstrate
 from ..substrate.opencode import OPENCODE_SURFACE, OpencodeSubstrate
 from ..substrate.pi import PI_SURFACE, PiSubstrate
 from . import wb_render as RENDER
 from .tasks import discover, select
 
 SCOREABLE = frozenset({"code", "web", "office"})
-SUBSTRATES = ("oc", "cx", "claude", "pi")
+SUBSTRATES = ("oc", "pi")
 
 _BASE_LOCK = threading.Lock()
 _BASE_DONE: set[Path] = set()
@@ -60,14 +58,6 @@ TRAJ_MAX_CHARS = 2_000_000
 
 def _harness_oc(fork: bool) -> str:
     return f"{'oc-harness' if fork else 'opencode'}/{config.WB_OC_HARNESS_VER}"
-
-
-def _harness_cx() -> str:
-    return f"codex-harness/{config.WB_CX_HARNESS_VER}"
-
-
-def _harness_claude() -> str:
-    return f"claude-harness/{config.WB_CLAUDE_HARNESS_VER}"
 
 
 def _harness_pi() -> str:
@@ -500,23 +490,6 @@ def sweep_orphans(max_age_s: int = 86400) -> int:
     return n
 
 
-def _codex_key() -> str:
-    """The bearer key Codex sends: the per-substrate key, else the shared one."""
-    endpoint = api.codex()
-    return endpoint.api_key if endpoint is not None else config.VERTEX_PROXY_KEY
-
-
-def _codex_container_url() -> str:
-    """The endpoint as the container sees it, falling back to the host-visible one."""
-    explicit = os.environ.get("SEC_AGENT_HARNESS2_CODEX_CONTAINER_URL")
-    if explicit:
-        return explicit
-    endpoint = api.codex(for_container=True)
-    if endpoint is not None and endpoint.base_url:
-        return endpoint.base_url
-    return config.CODEX_CONTAINER_URL or ""
-
-
 def _job_yaml(
     subset: Subset,
     substrate: str,
@@ -537,41 +510,6 @@ def _job_yaml(
                 hp["prompt_template_path"] = str(composed.resolve())
         hp_lines = "\n".join(f"  {key}: {json.dumps(val)}" for key, val in sorted(hp.items()))
         extra = f"harness_params_override:\n{hp_lines}\n"
-    elif substrate == "claude":
-        harness = _harness_claude()
-        hp = {"CLAUDE_MODEL": config.SOLVER_MODEL_CLAUDE}
-        if ws is not None:
-            hp["WB_HARNESS_WS"] = str(ws.resolve())
-        hp_lines = "\n".join(f"  {key}: {json.dumps(val)}" for key, val in sorted(hp.items()))
-        hp_block = f"harness_params_override:\n{hp_lines}\n"
-        cl_env: dict[str, str] = {}
-        ep = api.claude()
-        if ep is not None:
-            api.claude_env(ep, cl_env)
-        else:
-            for key in ("ANTHROPIC_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
-                if os.environ.get(key):
-                    cl_env[key] = os.environ[key]
-        env_block = ""
-        if cl_env:
-            env_lines = "\n".join(
-                f"  {key}: {json.dumps(val)}" for key, val in sorted(cl_env.items())
-            )
-            env_block = f"env_override:\n{env_lines}\n"
-        extra = (
-            "extra_allowed_hosts:\n"
-            "  - host.docker.internal\n"
-            "environment_override:\n"
-            "  extra_hosts:\n"
-            "    - host.docker.internal:host-gateway\n"
-            "  mounts:\n"
-            "    - type: bind\n"
-            f"      source: {config.CLAUDE_DIST}\n"
-            "      target: /opt/claude\n"
-            "      read_only: true\n"
-            f"{env_block}"
-            f"{hp_block}"
-        )
     elif substrate == "pi":
         harness = _harness_pi()
         hp = {"PI_MODEL": config.SOLVER_MODEL_PI}
@@ -610,31 +548,7 @@ def _job_yaml(
             f"{hp_block}"
         )
     else:
-        harness = _harness_cx()
-        hp = {"CODEX_MODEL": config.SOLVER_MODEL_CX}
-        if ws is not None:
-            hp["WB_HARNESS_WS"] = str(ws.resolve())
-        hp_block = ""
-        if hp:
-            hp_lines = "\n".join(f"  {key}: {json.dumps(val)}" for key, val in sorted(hp.items()))
-            hp_block = f"harness_params_override:\n{hp_lines}\n"
-        extra = (
-            "extra_allowed_hosts:\n"
-            "  - host.docker.internal\n"
-            "environment_override:\n"
-            "  extra_hosts:\n"
-            "    - host.docker.internal:host-gateway\n"
-            "  mounts:\n"
-            "    - type: bind\n"
-            f"      source: {config.CODEX_DIST}\n"
-            "      target: /opt/codex\n"
-            "      read_only: true\n"
-            "env_override:\n"
-            f"  VERTEX_PROXY_KEY: {json.dumps(_codex_key())}\n"
-            f"  VERTEXAI_LOCATION: {config.VERTEX_REGION}\n"
-            f"  CODEX_BRIDGE_URL: {json.dumps(_codex_container_url())}\n"
-            f"{hp_block}"
-        )
+        raise ValueError(f"unknown substrate: {substrate!r}")
     judge = (
         f"llm_judge_override:\n  model: {subset.llm_judge_model}\n"
         if subset.llm_judge_model
@@ -756,8 +670,6 @@ def spec_for(subset: str, substrate: str) -> BenchSpec:
     channel = resolve_channel_model(None, None, effort="high")
     install_mode_map = {
         "oc": "home_dir_jinja",
-        "cx": "codex_root",
-        "claude": "claude_root",
         "pi": "pi_root",
     }
     install_mode = install_mode_map[substrate]
@@ -769,7 +681,7 @@ def spec_for(subset: str, substrate: str) -> BenchSpec:
         channels={"proposer": channel, "selector": channel},
         domain_word="category",
         leak_globs=s.leak_globs,
-        allow_subagents=(substrate in ("oc", "claude", "pi")),
+        allow_subagents=True,
         obs_trunc=50_000,
         proposer_deliverables=("names" if subset == "code" else "contents"),
         state_deliverable=True,
@@ -792,12 +704,10 @@ class WbAdapter:
         self.spec = spec_for(subset, substrate)
         if substrate == "oc":
             self.substrate = OpencodeSubstrate(launcher=self._launch)
-        elif substrate == "cx":
-            self.substrate = CodexSubstrate(launcher=self._launch)
-        elif substrate == "claude":
-            self.substrate = ClaudeSubstrate(launcher=self._launch)
         elif substrate == "pi":
             self.substrate = PiSubstrate(launcher=self._launch)
+        else:
+            raise ValueError(f"unknown substrate: {substrate!r}")
 
     def tasks(self, split: str = "all") -> list[str]:
         return select(
@@ -851,20 +761,12 @@ class WbAdapter:
         name = self.substrate.name
         if name == "oc":
             solver, ver_key, ver = config.SOLVER_MODEL_OC, "oc_ver", config.WB_OC_HARNESS_VER
-        elif name == "claude":
-            solver, ver_key, ver = (
-                config.SOLVER_MODEL_CLAUDE,
-                "claude_ver",
-                config.WB_CLAUDE_HARNESS_VER,
-            )
-        elif name == "pi":
+        else:
             solver, ver_key, ver = (
                 config.SOLVER_MODEL_PI,
                 "pi_ver",
                 config.WB_PI_HARNESS_VER,
             )
-        else:
-            solver, ver_key, ver = config.SOLVER_MODEL_CX, "cx_ver", config.WB_CX_HARNESS_VER
         return {
             "solver": solver,
             ver_key: ver,
@@ -901,8 +803,6 @@ class WbAdapter:
         ws = None if install.fingerprint == "base" else install.staging_dir
         k = len(req.run_ids)
         label = self._label(req.run_ids[0], k)
-        if self.substrate.name == "cx":
-            self.substrate.preflight(require_dist=True, require_bridge=True)
 
         def _have(task_id: str) -> int:
             return sum(
@@ -987,14 +887,7 @@ class WbAdapter:
         return RENDER.body_chars(Path(run_dir), self.subset) >= 200
 
     def trajectory_path(self, run_dir: Path) -> Path:
-        if self.substrate.name == "oc":
-            stream = "oc-output.txt"
-        elif self.substrate.name == "claude":
-            stream = "claude-output.jsonl"
-        elif self.substrate.name == "pi":
-            stream = "pi-output.jsonl"
-        else:
-            stream = "codex-output.jsonl"
+        stream = "oc-output.txt" if self.substrate.name == "oc" else "pi-output.jsonl"
         return Path(run_dir) / "agent" / stream
 
     def trajectory(self, run_dir: Path, *, obs_trunc: int) -> str:
@@ -1041,35 +934,9 @@ class WbAdapter:
                         stubs=True,
                         allow_subagents=self.spec.allow_subagents,
                     )
-                elif self.substrate.name == "claude":
-                    HT.write_tree(
-                        CLAUDE_SURFACE,
-                        {
-                            "CLAUDE.md": (
-                                "Follow the task instructions and complete the requested work in the "
-                                "workspace, writing every deliverable where the instructions say."
-                            )
-                        },
-                        d,
-                        stubs=True,
-                        allow_subagents=self.spec.allow_subagents,
-                    )
-                elif self.substrate.name == "pi":
-                    HT.write_tree(
-                        PI_SURFACE,
-                        {
-                            "AGENTS.md": (
-                                "Follow the task instructions and complete the requested work in the "
-                                "workspace, writing every deliverable where the instructions say."
-                            )
-                        },
-                        d,
-                        stubs=True,
-                        allow_subagents=self.spec.allow_subagents,
-                    )
                 else:
                     HT.write_tree(
-                        CODEX_SURFACE,
+                        PI_SURFACE,
                         {
                             "AGENTS.md": (
                                 "Follow the task instructions and complete the requested work in the "
@@ -1085,7 +952,7 @@ class WbAdapter:
 
     def validate_tree(self, tree: dict[str, str]) -> None:
         """oc: check the Jinja invariant on the COMPOSED template, so a brace in a skill's
-        `description:` is a rejected proposal rather than a dead trial. cx: nothing."""
+        `description:` is a rejected proposal rather than a dead trial. pi: nothing."""
         if self.substrate.name != "oc":
             return
         with tempfile.TemporaryDirectory() as td:
@@ -1108,11 +975,7 @@ class WbAdapter:
         slugs = (
             [_harness_oc(fork=False), _harness_oc(fork=True)]
             if self.substrate.name == "oc"
-            else [_harness_claude()]
-            if self.substrate.name == "claude"
             else [_harness_pi()]
-            if self.substrate.name == "pi"
-            else [_harness_cx()]
         )
         for slug in slugs:
             family, _, ver = slug.partition("/")
@@ -1123,10 +986,7 @@ class WbAdapter:
                     f"ship as third_party/wb_runner/configs/harnesses/; run "
                     f"python scripts/setup_benchmark.py wb"
                 )
-        if self.substrate.name == "cx":
-            self.substrate.preflight(require_dist=True, require_bridge=True)
-        else:
-            self.substrate.preflight()
+        self.substrate.preflight()
 
     def _killed(self, run_dir: Path) -> bool:
         """True when the capture stream ends on a provider error object, i.e. the rollout was

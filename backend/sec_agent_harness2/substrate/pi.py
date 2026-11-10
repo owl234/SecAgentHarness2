@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""PiSubstrate: Pi Coding Agent (`@mariozechner/pi-coding-agent`) as a solver substrate.
+"""PiSubstrate: Pi Coding Agent (`@earendil-works/pi-coding-agent`) as a solver substrate.
 
 Carries the c1..c9 surface (`PI_SURFACE`) with dual-track c8 support:
 - Declarative `.pi/hooks.json` (`PreToolUse`, `PostToolUse`, `SessionStart`, `Stop`, `UserPromptSubmit`)
@@ -561,7 +561,7 @@ def mcp_config_json(harness_dir: Path | None) -> str:
 
 
 class PiSubstrate:
-    """Pi Coding Agent (`@mariozechner/pi-coding-agent`) behind the Substrate interface."""
+    """Pi Coding Agent (`@earendil-works/pi-coding-agent`) behind the Substrate interface."""
 
     name = "pi"
 

@@ -55,8 +55,6 @@ _COMMANDS = (
     "demo",
     "pipeline",
     "ui",
-    "bridge",
-    "responses-bridge",
 )
 
 
@@ -212,13 +210,8 @@ def main(argv: list[str] | None = None) -> int:
         from . import ui as ui_mod
 
         return ui_mod.main(rest)
-    if cmd in ("responses-bridge", "responses_bridge"):
-        from . import responses_bridge as responses_bridge_mod
-
-        return responses_bridge_mod.main(rest)
-    from . import bridge as bridge_mod
-
-    return bridge_mod.main(rest)
+    print(I18N.t("cli.unknown", I18N.get_lang(), v=cmd, opts=", ".join(_COMMANDS)), file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

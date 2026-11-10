@@ -77,7 +77,7 @@ def _settings() -> Settings:
     if not (render_dir / ".opencode").is_dir():
         raise SystemExit(f"[ERROR] HARNESS_RENDER_DIR has no .opencode/: {render_dir}")
     opencode_dir = Path(env.get("OPENCODE_DIR") or JOBBENCH / "opencode")
-    if not (opencode_dir / "packages" / "opencode").is_dir():
+    if not (opencode_dir / "packages" / "cli").is_dir():
         raise SystemExit(f"[ERROR] OpenCode not installed at {opencode_dir}")
     tasks_base = Path(env.get("TASKS_BASE_DIR") or JOBBENCH / "dataset" / "main")
     return Settings(
@@ -156,7 +156,7 @@ def _command(cfg: Settings, workspace: Path, prompt: str, title: str) -> list[st
         "bun",
         "run",
         "--cwd",
-        str(cfg.opencode_dir / "packages" / "opencode"),
+        str(cfg.opencode_dir / "packages" / "cli"),
         "--conditions=browser",
         "src/index.ts",
         "run",

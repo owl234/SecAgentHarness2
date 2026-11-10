@@ -45,8 +45,8 @@ export const UnifiedApiTab: React.FC<UnifiedApiTabProps> = ({
         </div>
         <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
           {tx(
-            '只需填写一组 SEC_AGENT_HARNESS2_API_BASE_URL 与 SEC_AGENT_HARNESS2_API_KEY，系统会自动按各 CLI 的线协议完成适配：Claude 走 Anthropic Messages（或 clawgod 代理）、OpenCode 自动生成 harness2/<model> Provider 块、Codex 走 Responses 协议。',
-            'Configure SEC_AGENT_HARNESS2_API_BASE_URL and SEC_AGENT_HARNESS2_API_KEY once: Harness² automatically adapts wire protocols across Claude (Anthropic Messages / clawgod proxy), OpenCode (harness2/<model> provider block), and Codex (OpenAI Responses).'
+            '只需填写一组 SEC_AGENT_HARNESS2_API_BASE_URL 与 SEC_AGENT_HARNESS2_API_KEY，系统会自动按各 CLI 的线协议完成适配：OpenCode 自动生成 harness2/<model> Provider 块，Pi Coding Agent 自动适配 models.json。',
+            'Configure SEC_AGENT_HARNESS2_API_BASE_URL and SEC_AGENT_HARNESS2_API_KEY once: Harness² automatically adapts wire protocols across OpenCode (harness2/<model> provider block) and Pi Coding Agent (models.json).'
           )}
         </p>
       </div>
@@ -106,11 +106,11 @@ export const UnifiedApiTab: React.FC<UnifiedApiTabProps> = ({
             type="text"
             value={form.unifiedModel}
             onChange={(e) => updateForm({ unifiedModel: e.target.value })}
-            placeholder={tx('例如: claude-sonnet-4-6 或 gpt-5.4', 'e.g. claude-sonnet-4-6 or gpt-5.4')}
+            placeholder={tx('例如: gemini-2.5-pro 或 gpt-5.4', 'e.g. gemini-2.5-pro or gpt-5.4')}
             className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
           />
           <div className="flex flex-wrap gap-1.5 mt-2">
-            {['claude-sonnet-4-6', 'gpt-5.4', 'gemini-2.5-pro', 'gpt-4o'].map((m) => (
+            {['gemini-2.5-pro', 'gpt-5.4', 'gpt-4o', 'deepseek-chat'].map((m) => (
               <button
                 key={m}
                 type="button"
@@ -133,14 +133,14 @@ export const UnifiedApiTab: React.FC<UnifiedApiTabProps> = ({
             className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
           >
             <option value="">{tx('自动按基座适配 (默认推荐)', 'Auto-adapt per substrate (Recommended)')}</option>
-            <option value="anthropic">anthropic (Anthropic Messages)</option>
             <option value="openai-chat">openai-chat (OpenAI Chat Completions)</option>
             <option value="openai-responses">openai-responses (OpenAI Responses)</option>
+            <option value="anthropic">anthropic (Anthropic Messages)</option>
           </select>
           <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
             {tx(
-              '留空时：Claude 默认走 anthropic，OpenCode 走 openai-chat，Codex 走 openai-responses。',
-              'When blank: Claude defaults to anthropic, OpenCode to openai-chat, and Codex to openai-responses.'
+              '留空时：OpenCode 与 Pi 默认走 openai-chat 协议。',
+              'When blank: OpenCode and Pi default to openai-chat protocol.'
             )}
           </p>
         </div>
@@ -152,7 +152,7 @@ export const UnifiedApiTab: React.FC<UnifiedApiTabProps> = ({
           <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
             <Link2 className="w-3.5 h-3.5 text-blue-500" />
             <span>
-              {tx('三基座实时协议解析预览 (api.describe)', 'Live Substrate Endpoint Resolution (api.describe)')}
+              {tx('双基座实时协议解析预览 (api.describe)', 'Live Substrate Endpoint Resolution (api.describe)')}
             </span>
           </span>
         </div>

@@ -53,7 +53,7 @@ def main(argv=None):
 
 def _endpoint(substrate: str):
     """The endpoint this substrate will actually contact, for the ready line."""
-    return {"cx": api.codex, "claude": api.claude, "pi": api.pi}.get(substrate, api.opencode)()
+    return {"pi": api.pi}.get(substrate, api.opencode)()
 
 
 if __name__ == "__main__":

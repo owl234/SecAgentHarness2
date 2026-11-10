@@ -67,8 +67,8 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
 
   const [sweepBench, setSweepBench] = useState<'jb' | 'wb' | 'lab'>('jb');
   const [sweepSubset, setSweepSubset] = useState<'office' | 'web' | 'code'>('office');
-  const [sweepSubstrate, setSweepSubstrate] = useState('claude');
-  const [sweepClaudeEffort, setSweepClaudeEffort] = useState<'low' | 'medium' | 'high'>('high');
+  const [sweepSubstrate, setSweepSubstrate] = useState('oc');
+  const [sweepPiEffort, setSweepPiEffort] = useState<'low' | 'medium' | 'high'>('high');
   const [sweepK, setSweepK] = useState(1);
   const [sweepModes, setSweepModes] = useState<'both' | 'aggregate' | 'sequential'>('both');
   const [sweepWorkers, setSweepWorkers] = useState(1);
@@ -116,10 +116,10 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
       setSweepSubstrate(executorStatus.active_executor);
     }
     const activeExec = executorStatus.executors.find(
-      (e) => e.id === (executorStatus.active_executor === 'pi' ? 'pi' : 'claude')
+      (e) => e.id === 'pi'
     );
     if (activeExec?.effort && ['low', 'medium', 'high'].includes(activeExec.effort)) {
-      setSweepClaudeEffort(activeExec.effort as 'low' | 'medium' | 'high');
+      setSweepPiEffort(activeExec.effort as 'low' | 'medium' | 'high');
     }
   }, [executorStatus]);
 
@@ -132,10 +132,10 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
           : 'parallel';
       const substrate = launcherType === 'demo' ? 'mock_demo' : sweepSubstrate;
       const subLabel =
-        substrate === 'claude'
-          ? `Claude (${sweepClaudeEffort})`
-          : substrate === 'pi'
-          ? `Pi (${sweepClaudeEffort})`
+        substrate === 'pi'
+          ? `Pi (${sweepPiEffort})`
+          : substrate === 'oc'
+          ? 'OpenCode'
           : substrate;
       onParameterChange({
         mode,
@@ -148,7 +148,7 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
     demoMode,
     sweepModes,
     sweepSubstrate,
-    sweepClaudeEffort,
+    sweepPiEffort,
     sweepBench,
     onParameterChange,
   ]);
@@ -164,8 +164,8 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
     } else if (preset === 'jb_smoke') {
       setLauncherType('sweep');
       setSweepBench('jb');
-      setSweepSubstrate(executorStatus?.active_executor || 'claude');
-      setSweepClaudeEffort('high');
+      setSweepSubstrate(executorStatus?.active_executor || 'oc');
+      setSweepPiEffort('high');
       setSweepK(1);
       setSweepModes('both');
       setSweepWorkers(1);
@@ -176,7 +176,7 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
       setLauncherType('sweep');
       setSweepBench('wb');
       setSweepSubset('office');
-      setSweepSubstrate(executorStatus?.active_executor || 'claude');
+      setSweepSubstrate(executorStatus?.active_executor || 'oc');
       setSweepK(1);
       setSweepModes('both');
       setSweepWorkers(1);
@@ -186,7 +186,7 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
     } else if (preset === 'sweep_full') {
       setLauncherType('sweep');
       setSweepBench('lab');
-      setSweepSubstrate(executorStatus?.active_executor || 'claude');
+      setSweepSubstrate(executorStatus?.active_executor || 'oc');
       setSweepK(2);
       setSweepModes('both');
       setSweepWorkers(2);
@@ -235,7 +235,7 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
           max_tasks: parsedMax && parsedMax > 0 ? parsedMax : null,
           only_domains: sweepOnlyDomains.trim() || null,
           dry_run: sweepDryRun,
-          effort: (sweepSubstrate === 'claude' || sweepSubstrate === 'pi') ? sweepClaudeEffort : undefined,
+          effort: sweepSubstrate === 'pi' ? sweepPiEffort : undefined,
         });
         showToast(tx('基准评测演进任务已启动', 'Benchmark Sweep pipeline launched'), 'info');
       }
@@ -771,31 +771,25 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
                     onChange={(e) => setSweepSubstrate(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-900 dark:text-white"
                   >
-                    <option value="claude">Claude Code (Thinking 思考执行器)</option>
                     <option value="oc">OpenCode (oc 本地执行器)</option>
-                    <option value="cx">Codex (cx 镜像执行器)</option>
                     <option value="pi">Pi Coding Agent (pi 极简原生执行器)</option>
                   </select>
                 </div>
 
-                {launcherType === 'sweep' && (sweepSubstrate === 'claude' || sweepSubstrate === 'pi') && (
+                {launcherType === 'sweep' && sweepSubstrate === 'pi' && (
                   <div>
                     <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1">
-                      {sweepSubstrate === 'pi'
-                        ? tx('Pi 深度思考等级 (Thinking)', 'Pi Thinking Effort')
-                        : tx('Claude 深度思考等级 (Effort)', 'Claude Thinking Effort')}
+                      {tx('Pi 深度思考等级 (Thinking)', 'Pi Thinking Effort')}
                     </label>
                     <div className="grid grid-cols-3 gap-1.5">
                       {(['low', 'medium', 'high'] as const).map((eff) => (
                         <button
                           key={eff}
                           type="button"
-                          onClick={() => setSweepClaudeEffort(eff)}
+                          onClick={() => setSweepPiEffort(eff)}
                           className={`py-1 px-2 rounded-md text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer ${
-                            sweepClaudeEffort === eff
-                              ? sweepSubstrate === 'pi'
-                                ? 'bg-pink-600 text-white'
-                                : 'bg-orange-500 text-white'
+                            sweepPiEffort === eff
+                              ? 'bg-pink-600 text-white'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'
                           }`}
                         >

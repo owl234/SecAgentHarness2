@@ -115,7 +115,7 @@ def ns(
         raise ValueError(f"unknown mode {mode!r}; the method has exactly two: {MODES}")
     if not substrate:
         raise ValueError(
-            "namespace needs a substrate name ('oc' | 'cx'); an empty one would "
+            "namespace needs a substrate name ('oc' | 'pi'); an empty one would "
             "let the two substrates' caches collide on every label"
         )
     validate_tag(tag)

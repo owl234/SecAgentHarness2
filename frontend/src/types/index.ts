@@ -284,6 +284,8 @@ export interface UnifiedApiConfig {
   improver_model: string;
   effective_improver_model: string;
   judge_model: string;
+  judge_model_override?: string;
+  effective_judge_model?: string;
   judge_base_url: string;
   judge_api_key_configured: boolean;
   judge_api_key_masked: string;
@@ -336,7 +338,7 @@ export interface ExecutorItem {
   api_key_masked?: string;
   current_model: string;
   model_override?: string;
-  effort?: 'low' | 'medium' | 'high' | string;
+  effort?: 'off' | 'low' | 'medium' | 'high' | string;
   base_url?: string;
   container_url?: string;
   effective_base_url?: string;

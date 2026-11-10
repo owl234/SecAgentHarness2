@@ -650,8 +650,9 @@ class PiSubstrate:
             else:
                 provider, bare_model = api.PI_PROVIDER, model
             argv.extend(["--provider", provider, "--model", bare_model])
-        if effort:
-            argv.extend(["--thinking", effort])
+        pi_eff = (effort or "").strip()
+        if pi_eff and pi_eff.lower() != "off":
+            argv.extend(["--thinking", pi_eff])
 
         if harness_dir is not None:
             existing_bridge = Path(harness_dir) / "_pi_runtime" / "harness2_bridge.ts"

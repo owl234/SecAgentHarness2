@@ -225,15 +225,24 @@ class OcAgent(BaseInstalledAgent):
         # --thinking is required for reasoning events to be emitted at all.
         # --dangerously-skip-permissions auto-approves anything not explicitly denied; it
         # does not weaken the deny list, and without it every permission ask is rejected.
+        eff_raw = (self._variant or "").strip()
+        eff_lower = eff_raw.lower()
+        base_model = model_arg.split("#")[0]
+        use_thinking = False
+        if eff_lower and eff_lower != "off":
+            eff_model = f"{base_model}#{eff_raw}"
+            use_thinking = True
+        else:
+            eff_model = base_model
+
         flags = [
             "run",
             "--format", "json",
-            "--thinking",
             "--dangerously-skip-permissions",
-            "--model", shlex.quote(model_arg),
+            "--model", shlex.quote(eff_model),
         ]
-        if self._variant:
-            flags += ["--variant", shlex.quote(self._variant)]
+        if use_thinking:
+            flags.insert(2, "--thinking")
         env_prefix = config_export
         if self._max_output_tokens is not None:
             # Raise OpenCode's 32k internal output clamp.

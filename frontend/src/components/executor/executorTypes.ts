@@ -11,12 +11,13 @@ export interface ExecutorFormValues {
   unifiedProtocol: string;
   // 1. OpenCode
   ocModel: string;
+  ocEffort: 'off' | 'low' | 'medium' | 'high';
   ocBaseUrl: string;
   ocApiKey: string;
   ocProtocol: string;
   // 2. Pi Coding Agent
   piModel: string;
-  piEffort: 'low' | 'medium' | 'high';
+  piEffort: 'off' | 'low' | 'medium' | 'high';
   piBaseUrl: string;
   piApiKey: string;
   piProtocol: string;
@@ -35,6 +36,7 @@ export const INITIAL_EXECUTOR_FORM: ExecutorFormValues = {
   unifiedModel: '',
   unifiedProtocol: '',
   ocModel: '',
+  ocEffort: 'high',
   ocBaseUrl: '',
   ocApiKey: '',
   ocProtocol: '',
@@ -67,7 +69,12 @@ export function buildFormFromExecutorsData(
     next.improverModel = data.unified_config.improver_model || '';
     const rawJudgeModel = data.unified_config.judge_model || '';
     const bareJudge = rawJudgeModel.replace(/^sec_agent_harness2\//, '');
-    next.judgeModel = bareJudge && bareJudge !== next.unifiedModel ? bareJudge : '';
+    if (data.unified_config.judge_model_override !== undefined) {
+      const bareOverride = data.unified_config.judge_model_override.replace(/^sec_agent_harness2\//, '').trim();
+      next.judgeModel = bareOverride;
+    } else {
+      next.judgeModel = bareJudge && bareJudge !== next.unifiedModel ? bareJudge : '';
+    }
     const rawJudgeBase = data.unified_config.judge_base_url || '';
     next.judgeBaseUrl = rawJudgeBase && rawJudgeBase !== next.unifiedBaseUrl ? rawJudgeBase : '';
     next.vertexProject = data.unified_config.vertex_project || '';
@@ -77,6 +84,10 @@ export function buildFormFromExecutorsData(
   const oc = data.executors.find((e) => e.id === 'oc');
   if (oc) {
     next.ocModel = oc.model_override || oc.current_model || '';
+    const ocEff = (oc.effort || '').toLowerCase();
+    if (ocEff === 'off' || ocEff === 'low' || ocEff === 'medium' || ocEff === 'high') {
+      next.ocEffort = ocEff;
+    }
     next.ocBaseUrl = oc.base_url || '';
     next.ocProtocol = oc.protocol_override || '';
   }
@@ -84,8 +95,9 @@ export function buildFormFromExecutorsData(
   const pi = data.executors.find((e) => e.id === 'pi');
   if (pi) {
     next.piModel = pi.model_override || pi.current_model || '';
-    if (pi.effort === 'low' || pi.effort === 'medium' || pi.effort === 'high') {
-      next.piEffort = pi.effort;
+    const piEff = (pi.effort || '').toLowerCase();
+    if (piEff === 'off' || piEff === 'low' || piEff === 'medium' || piEff === 'high') {
+      next.piEffort = piEff;
     }
     next.piBaseUrl = pi.base_url || '';
     next.piProtocol = pi.protocol_override || '';

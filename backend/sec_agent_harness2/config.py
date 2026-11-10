@@ -177,16 +177,6 @@ def lab_repo() -> Path:
 OPENCODE_DIR = DEPENDENCIES / "opencode"
 BUN = DEPENDENCIES / "tools" / "node_modules" / ".bin" / "bun"
 LAB_PYTHON = lab_repo() / ".venv" / "bin" / "python"
-LAB_JUDGE_MODEL = (
-    "vertex/" + JUDGE_MODEL if JUDGE_MODEL.startswith("gemini") else JUDGE_MODEL
-)
-LAB_DELIV_CAP = 60000
-JB_JUDGE_PYTHON = jb_repo() / ".venv" / "bin" / "python"
-JB_JUDGE_MODEL = (
-    "google/" + JUDGE_MODEL
-    if JUDGE_MODEL.startswith("gemini") and not env("SEC_AGENT_HARNESS2_JUDGE_BASE_URL")
-    else JUDGE_MODEL
-)
 _vertex_host = (
     "aiplatform.googleapis.com"
     if VERTEX_REGION == "global"
@@ -198,9 +188,28 @@ VERTEX_OPENAI_URL = (
 )
 JB_JUDGE_API_BASE = env(
     "SEC_AGENT_HARNESS2_JUDGE_BASE_URL",
-    (VERTEX_OPENAI_URL if VERTEX_PROJECT else "") or API_BASE_URL,
+    API_BASE_URL or (VERTEX_OPENAI_URL if VERTEX_PROJECT else ""),
 )
-JB_JUDGE_API_KEY = env("SEC_AGENT_HARNESS2_JUDGE_API_KEY", API_KEY if not VERTEX_PROJECT else "")
+JB_JUDGE_API_KEY = env(
+    "SEC_AGENT_HARNESS2_JUDGE_API_KEY",
+    API_KEY if (API_BASE_URL or not VERTEX_PROJECT) else "",
+)
+
+is_vertex_target = bool(
+    VERTEX_PROJECT and not env("SEC_AGENT_HARNESS2_JUDGE_BASE_URL") and not API_BASE_URL
+)
+LAB_JUDGE_MODEL = (
+    ("vertex/" + JUDGE_MODEL)
+    if (JUDGE_MODEL.startswith("gemini") and is_vertex_target)
+    else JUDGE_MODEL
+)
+LAB_DELIV_CAP = 60000
+JB_JUDGE_PYTHON = jb_repo() / ".venv" / "bin" / "python"
+JB_JUDGE_MODEL = (
+    ("google/" + JUDGE_MODEL)
+    if (JUDGE_MODEL.startswith("gemini") and is_vertex_target)
+    else JUDGE_MODEL
+)
 JB_JUDGE_REASONING_EFFORT = "low"
 JB_REPORTING_JUDGE_DETAILS = ""
 JB_OBS_TRUNC = 50000

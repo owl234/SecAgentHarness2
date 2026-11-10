@@ -502,7 +502,9 @@ def _job_yaml(
     sel = "\n".join(f"    - {t}" for t in tasks)
     if substrate == "oc":
         harness = _harness_oc(fork=ws is not None)
-        hp: dict = {"OPENCODE_VARIANT": "high"}
+        hp: dict = {
+            "OPENCODE_VARIANT": os.environ.get("SEC_AGENT_HARNESS2_OPENCODE_VARIANT", "high") or "high",
+        }
         if ws is not None:
             hp["WB_HARNESS_WS"] = str(ws.resolve())
             composed = ws / "_composed" / "prompt.j2"
@@ -521,6 +523,7 @@ def _job_yaml(
             "PI_OFFLINE": "1",
             "PI_SKIP_VERSION_CHECK": "1",
             "PI_TELEMETRY": "0",
+            "PI_EFFORT": os.environ.get("SEC_AGENT_HARNESS2_PI_EFFORT", "high") or "high",
         }
         ep = api.pi(for_container=True)
         if ep is not None:

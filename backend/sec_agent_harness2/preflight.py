@@ -146,15 +146,16 @@ def check(adapter, *, judge=False) -> list[str]:
         )
         if not config.JB_JUDGE_API_BASE:
             errors.append(
-                "Set GOOGLE_CLOUD_PROJECT or SEC_AGENT_HARNESS2_JUDGE_BASE_URL for JobBench judging"
+                "Set GOOGLE_CLOUD_PROJECT, SEC_AGENT_HARNESS2_API_BASE_URL, or SEC_AGENT_HARNESS2_JUDGE_BASE_URL for JobBench judging"
             )
+        effective_judge_key = config.JB_JUDGE_API_KEY or config.API_KEY
         if (
             config.JUDGE_MODEL
-            and not config.JB_JUDGE_API_KEY
+            and not effective_judge_key
             and not config.JUDGE_MODEL.startswith("gemini")
         ):
             errors.append(
-                "A non-Gemini JobBench judge requires SEC_AGENT_HARNESS2_JUDGE_BASE_URL and SEC_AGENT_HARNESS2_JUDGE_API_KEY"
+                "A non-Gemini JobBench judge requires an API key (set SEC_AGENT_HARNESS2_JUDGE_API_KEY or SEC_AGENT_HARNESS2_API_KEY)"
             )
     elif bench == "wb":
         probe("Docker daemon", ["docker", "info", "--format", "{{.ServerVersion}}"])

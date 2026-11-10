@@ -226,7 +226,7 @@ def opencode_config(endpoint: Endpoint) -> str:
         npm = "@ai-sdk/anthropic"
     else:
         npm = "@ai-sdk/openai-compatible"
-    model = endpoint.model.split("/", 1)[-1] if endpoint.model else ""
+    model = endpoint.model.split("/", 1)[-1].split("#", 1)[0] if endpoint.model else ""
     block: dict = {
         "provider": {
             OPENCODE_PROVIDER: {
@@ -242,7 +242,12 @@ def opencode_config(endpoint: Endpoint) -> str:
                             "id": model,
                             "name": model,
                             "tool_call": True,
-                            "reasoning": True,
+                            "capabilities": {
+                                "reasoning": {
+                                    "supported": True,
+                                    "effort": ["low", "medium", "high"],
+                                }
+                            },
                         }
                     }
                     if model

@@ -56,6 +56,8 @@ class ExecutorConfigRequest(BaseModel):
     model: str | None = None
     protocol: str | None = None
     effort: str | None = None
+    oc_variant: str | None = None
+    oc_effort: str | None = None
     container_url: str | None = None
     improver_model: str | None = None
     judge_model: str | None = None
@@ -230,8 +232,12 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
                 extra_env["SEC_AGENT_HARNESS2_SOLVER_MODEL"] = eff_model
             elif substrate_val == "pi":
                 extra_env["SEC_AGENT_HARNESS2_PI_MODEL"] = eff_model
-        if req.effort and substrate_val == "pi":
-            extra_env["SEC_AGENT_HARNESS2_PI_EFFORT"] = req.effort
+        if req.effort:
+            eff_val = req.effort.strip()
+            if substrate_val == "pi":
+                extra_env["SEC_AGENT_HARNESS2_PI_EFFORT"] = eff_val
+            elif substrate_val == "oc":
+                extra_env["SEC_AGENT_HARNESS2_OPENCODE_VARIANT"] = eff_val
         if substrate_val == "pi":
             extra_env["SEC_AGENT_HARNESS2_DEFAULT_EXECUTOR"] = "pi"
 
@@ -403,6 +409,10 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
                 updates["SEC_AGENT_HARNESS2_PI_PROTOCOL"] = proto
             if req.effort is not None:
                 updates["SEC_AGENT_HARNESS2_PI_EFFORT"] = req.effort.strip()
+            if req.oc_variant is not None:
+                updates["SEC_AGENT_HARNESS2_OPENCODE_VARIANT"] = req.oc_variant.strip()
+            elif req.oc_effort is not None:
+                updates["SEC_AGENT_HARNESS2_OPENCODE_VARIANT"] = req.oc_effort.strip()
         elif req.executor_id == "oc":
             if eff_base is not None:
                 updates["SEC_AGENT_HARNESS2_OPENCODE_BASE_URL"] = eff_base
@@ -412,6 +422,12 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
                 updates["SEC_AGENT_HARNESS2_SOLVER_MODEL"] = req.model
             if req.protocol is not None:
                 updates["SEC_AGENT_HARNESS2_OPENCODE_PROTOCOL"] = req.protocol
+            if req.effort is not None:
+                updates["SEC_AGENT_HARNESS2_OPENCODE_VARIANT"] = req.effort.strip()
+            elif req.oc_variant is not None:
+                updates["SEC_AGENT_HARNESS2_OPENCODE_VARIANT"] = req.oc_variant.strip()
+            elif req.oc_effort is not None:
+                updates["SEC_AGENT_HARNESS2_OPENCODE_VARIANT"] = req.oc_effort.strip()
         elif req.executor_id == "pi":
             if eff_base is not None:
                 updates["SEC_AGENT_HARNESS2_PI_BASE_URL"] = eff_base
@@ -422,7 +438,7 @@ def create_app(workspace_root: Path, runs_root: Path | None = None) -> FastAPI:
             if req.protocol is not None:
                 updates["SEC_AGENT_HARNESS2_PI_PROTOCOL"] = req.protocol
             if req.effort is not None:
-                updates["SEC_AGENT_HARNESS2_PI_EFFORT"] = req.effort
+                updates["SEC_AGENT_HARNESS2_PI_EFFORT"] = req.effort.strip()
             if req.cli_path is not None:
                 updates["SEC_AGENT_HARNESS2_PI_BIN"] = req.cli_path
         elif req.executor_id == "vertex":

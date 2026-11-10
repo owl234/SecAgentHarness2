@@ -528,6 +528,157 @@ class UITests(unittest.TestCase):
             os.environ.update(saved_env)
             scanner.sync_config_from_env()
 
+    def test_judge_precedence_unified_over_vertex(self):
+        import os
+        saved_env = dict(os.environ)
+        try:
+            os.environ["GOOGLE_CLOUD_PROJECT"] = "my-gcp-project"
+            os.environ["SEC_AGENT_HARNESS2_API_MODEL"] = "gemini-2.5-pro"
+            os.environ["SEC_AGENT_HARNESS2_API_BASE_URL"] = "https://thirdparty.endpoint/v1"
+            os.environ["SEC_AGENT_HARNESS2_API_KEY"] = "sk-thirdparty-key"
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_MODEL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_BASE_URL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_API_KEY", None)
+            scanner.sync_config_from_env()
+
+            # Unified API takes precedence over Vertex fallback
+            self.assertEqual(C.JB_JUDGE_API_BASE, "https://thirdparty.endpoint/v1")
+            self.assertEqual(C.JB_JUDGE_API_KEY, "sk-thirdparty-key")
+            # Should NOT prepend google/ or vertex/ because target is third-party API
+            self.assertEqual(C.JB_JUDGE_MODEL, "gemini-2.5-pro")
+            self.assertEqual(C.LAB_JUDGE_MODEL, "gemini-2.5-pro")
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
+            scanner.sync_config_from_env()
+
+    def test_judge_vertex_target_when_no_unified_api(self):
+        import os
+        saved_env = dict(os.environ)
+        try:
+            os.environ["GOOGLE_CLOUD_PROJECT"] = "my-gcp-project"
+            os.environ.pop("SEC_AGENT_HARNESS2_API_BASE_URL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_API_KEY", None)
+            os.environ["SEC_AGENT_HARNESS2_JUDGE_MODEL"] = "gemini-2.5-pro"
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_BASE_URL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_API_KEY", None)
+            scanner.sync_config_from_env()
+
+            # Vertex target is used
+            self.assertEqual(C.JB_JUDGE_API_BASE, C.VERTEX_OPENAI_URL)
+            self.assertEqual(C.JB_JUDGE_API_KEY, "")
+            self.assertEqual(C.JB_JUDGE_MODEL, "google/gemini-2.5-pro")
+            self.assertEqual(C.LAB_JUDGE_MODEL, "vertex/gemini-2.5-pro")
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
+            scanner.sync_config_from_env()
+
+    def test_lab_env_injection_inherits_shared_api(self):
+        import os
+        from sec_agent_harness2.benchmarks.lab import _lab_env
+        saved_env = dict(os.environ)
+        try:
+            os.environ["SEC_AGENT_HARNESS2_API_BASE_URL"] = "https://shared.proxy/v1"
+            os.environ["SEC_AGENT_HARNESS2_API_KEY"] = "sk-shared-key"
+            os.environ["SEC_AGENT_HARNESS2_API_MODEL"] = "gpt-4o"
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_BASE_URL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_API_KEY", None)
+            scanner.sync_config_from_env()
+
+            env = _lab_env()
+            self.assertEqual(env["HARNESS2_JUDGE_BASE_URL"], "https://shared.proxy/v1")
+            self.assertEqual(env["HARNESS2_JUDGE_API_KEY"], "sk-shared-key")
+            self.assertEqual(env["HARNESS2_API_BASE_URL"], "https://shared.proxy/v1")
+            self.assertEqual(env["HARNESS2_API_KEY"], "sk-shared-key")
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
+            scanner.sync_config_from_env()
+
+    def test_jobbench_preflight_non_gemini_judge_not_blocked_with_inherited_key(self):
+        import os
+        from unittest.mock import patch
+        from sec_agent_harness2 import preflight
+        saved_env = dict(os.environ)
+        try:
+            os.environ["SEC_AGENT_HARNESS2_API_BASE_URL"] = "https://shared.proxy/v1"
+            os.environ["SEC_AGENT_HARNESS2_API_KEY"] = "sk-shared-key"
+            os.environ["SEC_AGENT_HARNESS2_API_MODEL"] = "gpt-4o"
+            os.environ["SEC_AGENT_HARNESS2_JUDGE_MODEL"] = "gpt-4o"
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_BASE_URL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_API_KEY", None)
+            scanner.sync_config_from_env()
+
+            # Mock missing_runners and subprocess.run to succeed
+            class MockSpec:
+                name = "jb"
+            class MockSubstrate:
+                name = "oc"
+            class MockAdapter:
+                spec = MockSpec()
+                substrate = MockSubstrate()
+                tasks = staticmethod(lambda: [])
+                preflight = staticmethod(lambda: None)
+
+            with patch("sec_agent_harness2.preflight.missing_runners", return_value=""), \
+                 patch("sec_agent_harness2.preflight.subprocess.run") as mock_run:
+                mock_run.return_value.returncode = 0
+                mock_run.return_value.stdout = ""
+                mock_run.return_value.stderr = ""
+                errors = preflight.check(MockAdapter(), judge=True)
+                key_errors = [e for e in errors if "requires an API key" in e or "SEC_AGENT_HARNESS2_JUDGE_API_KEY" in e]
+                self.assertEqual(key_errors, [])
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
+            scanner.sync_config_from_env()
+
+    def test_judge_api_key_inheritance_without_api_base_url_and_vertex(self):
+        import os
+        saved_env = dict(os.environ)
+        try:
+            os.environ["SEC_AGENT_HARNESS2_API_KEY"] = "sk-direct-openai-key"
+            os.environ.pop("SEC_AGENT_HARNESS2_API_BASE_URL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_BASE_URL", None)
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_API_KEY", None)
+            os.environ.pop("GOOGLE_CLOUD_PROJECT", None)
+            scanner.sync_config_from_env()
+
+            # When not targeting Vertex and no custom judge key is set,
+            # JB_JUDGE_API_KEY must inherit API_KEY even if API_BASE_URL is empty
+            self.assertEqual(C.JB_JUDGE_API_KEY, "sk-direct-openai-key")
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
+            scanner.sync_config_from_env()
+
+    def test_get_executors_status_judge_fields(self):
+        import os
+        saved_env = dict(os.environ)
+        try:
+            os.environ["SEC_AGENT_HARNESS2_API_MODEL"] = "gemini-2.5-pro"
+            os.environ["SEC_AGENT_HARNESS2_JUDGE_MODEL"] = "o3-mini"
+            scanner.sync_config_from_env()
+
+            status = scanner.get_executors_status(self.runs_root.parent)
+            u_cfg = status["unified_config"]
+            self.assertEqual(u_cfg["judge_model_override"], "o3-mini")
+            self.assertEqual(u_cfg["effective_judge_model"], "o3-mini")
+
+            # Clear judge override: judge_model_override should be empty while effective follows API_MODEL
+            os.environ.pop("SEC_AGENT_HARNESS2_JUDGE_MODEL", None)
+            scanner.sync_config_from_env()
+            status_cleared = scanner.get_executors_status(self.runs_root.parent)
+            u_cfg_cleared = status_cleared["unified_config"]
+            self.assertEqual(u_cfg_cleared["judge_model_override"], "")
+            self.assertEqual(u_cfg_cleared["effective_judge_model"], "gemini-2.5-pro")
+            self.assertEqual(u_cfg_cleared["judge_model"], "gemini-2.5-pro")
+        finally:
+            os.environ.clear()
+            os.environ.update(saved_env)
+            scanner.sync_config_from_env()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -149,6 +149,16 @@ def _stage(task_dir: Path, render_dir: Path, workspace: Path) -> None:
 
 
 def _command(cfg: Settings, workspace: Path, prompt: str, title: str) -> list[str]:
+    eff_raw = (cfg.variant or "").strip()
+    eff_lower = eff_raw.lower()
+    base_model = cfg.model_id.split("#")[0]
+    use_thinking = False
+    if eff_lower and eff_lower != "off":
+        model = f"{base_model}#{eff_raw}"
+        use_thinking = True
+    else:
+        model = base_model
+
     cmd = [
         "timeout",
         "--kill-after=30s",
@@ -166,9 +176,9 @@ def _command(cfg: Settings, workspace: Path, prompt: str, title: str) -> list[st
     ]
     if cfg.agent_name:
         cmd += ["--agent", cfg.agent_name]
-    if cfg.variant:
-        cmd += ["--variant", cfg.variant]
-    return cmd + ["--model", cfg.model_id, "--title", title, "--format", "json"]
+    if use_thinking:
+        cmd += ["--thinking"]
+    return cmd + ["--model", model, "--title", title, "--format", "json"]
 
 
 def _attempt(

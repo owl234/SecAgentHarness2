@@ -1861,20 +1861,25 @@ def sync_config_from_env() -> None:
     )
     config.JB_JUDGE_API_BASE = config.env(
         "SEC_AGENT_HARNESS2_JUDGE_BASE_URL",
-        (config.VERTEX_OPENAI_URL if config.VERTEX_PROJECT else "") or config.API_BASE_URL,
+        config.API_BASE_URL or (config.VERTEX_OPENAI_URL if config.VERTEX_PROJECT else ""),
     )
     config.JB_JUDGE_API_KEY = config.env(
         "SEC_AGENT_HARNESS2_JUDGE_API_KEY",
-        config.API_KEY if not config.VERTEX_PROJECT else "",
+        config.API_KEY if (config.API_BASE_URL or not config.VERTEX_PROJECT) else "",
+    )
+    is_vertex_target = bool(
+        config.VERTEX_PROJECT
+        and not config.env("SEC_AGENT_HARNESS2_JUDGE_BASE_URL")
+        and not config.API_BASE_URL
     )
     config.LAB_JUDGE_MODEL = (
-        "vertex/" + config.JUDGE_MODEL
-        if config.JUDGE_MODEL.startswith("gemini")
+        ("vertex/" + config.JUDGE_MODEL)
+        if (config.JUDGE_MODEL.startswith("gemini") and is_vertex_target)
         else config.JUDGE_MODEL
     )
     config.JB_JUDGE_MODEL = (
-        "google/" + config.JUDGE_MODEL
-        if config.JUDGE_MODEL.startswith("gemini") and not config.env("SEC_AGENT_HARNESS2_JUDGE_BASE_URL")
+        ("google/" + config.JUDGE_MODEL)
+        if (config.JUDGE_MODEL.startswith("gemini") and is_vertex_target)
         else config.JUDGE_MODEL
     )
 
@@ -2378,6 +2383,7 @@ def get_executors_status(
     oc_has_key = bool((ep_oc and ep_oc.api_key) or vertex_project or os.environ.get("OPENAI_API_KEY"))
     oc_model = config.SOLVER_MODEL_OC
     oc_model_override = os.environ.get("SEC_AGENT_HARNESS2_SOLVER_MODEL", "")
+    oc_variant = os.environ.get("SEC_AGENT_HARNESS2_OPENCODE_VARIANT", "high") or "high"
     oc_base_override = os.environ.get("SEC_AGENT_HARNESS2_OPENCODE_BASE_URL", "")
     oc_proto_override = os.environ.get("SEC_AGENT_HARNESS2_OPENCODE_PROTOCOL", "")
     oc_effective_proto = ep_oc.protocol if ep_oc else (oc_proto_override or "openai-chat")
@@ -2431,6 +2437,7 @@ def get_executors_status(
 
     # 3. Improver, Judge & Vertex AI inspection
     improver_override = os.environ.get("SEC_AGENT_HARNESS2_IMPROVER_MODEL", "")
+    judge_model_override = os.environ.get("SEC_AGENT_HARNESS2_JUDGE_MODEL", "")
     judge_model = config.JUDGE_MODEL
     judge_base_override = os.environ.get("SEC_AGENT_HARNESS2_JUDGE_BASE_URL", "")
     judge_key_raw = os.environ.get("SEC_AGENT_HARNESS2_JUDGE_API_KEY", "")
@@ -2457,6 +2464,8 @@ def get_executors_status(
             "improver_model": improver_override,
             "effective_improver_model": config.IMPROVER_MODEL,
             "judge_model": judge_model,
+            "judge_model_override": judge_model_override,
+            "effective_judge_model": judge_model,
             "judge_base_url": judge_base_override,
             "judge_api_key_configured": bool(judge_key_raw.strip()),
             "judge_api_key_masked": _mask_secret(judge_key_raw),
@@ -2478,6 +2487,7 @@ def get_executors_status(
                 "api_key_masked": _mask_secret(os.environ.get("SEC_AGENT_HARNESS2_OPENCODE_API_KEY") or (ep_oc.api_key if ep_oc else "")),
                 "current_model": oc_model,
                 "model_override": oc_model_override,
+                "effort": oc_variant,
                 "base_url": oc_base_override,
                 "effective_base_url": ep_oc.base_url if ep_oc else (f"google-vertex ({vertex_project})" if vertex_project else ""),
                 "protocol": oc_effective_proto,

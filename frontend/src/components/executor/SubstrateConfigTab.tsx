@@ -107,6 +107,65 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
             </p>
           </div>
 
+          {/* Reasoning Effort Selector */}
+          <div className="bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-blue-500" />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {tx(
+                    '思考与推理强度 (SEC_AGENT_HARNESS2_OPENCODE_VARIANT · 传递为 --model <id>#<variant>)',
+                    'Reasoning Effort (SEC_AGENT_HARNESS2_OPENCODE_VARIANT · passed as --model <id>#<variant>)'
+                  )}
+                </span>
+              </div>
+              <span className="text-xs font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2.5 py-0.5 rounded-full border border-blue-500/20">
+                {form.ocEffort.toUpperCase()}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(
+                [
+                  {
+                    id: 'off',
+                    label: tx('Off (关闭思考)', 'Off (No thinking)'),
+                    desc: tx('基础模型直接输出', 'Raw model output'),
+                  },
+                  {
+                    id: 'low',
+                    label: tx('Low (轻量快速)', 'Low (Fast)'),
+                    desc: tx('低延迟快速验证', 'Low-latency verification'),
+                  },
+                  {
+                    id: 'medium',
+                    label: tx('Medium (均衡)', 'Medium (Balanced)'),
+                    desc: tx('兼顾速度与推理深度', 'Balanced speed & reasoning'),
+                  },
+                  {
+                    id: 'high',
+                    label: tx('High (推荐默认)', 'High (Recommended)'),
+                    desc: tx('深度思考与严密自检', 'Deep thinking & verification'),
+                  },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => updateForm({ ocEffort: opt.id })}
+                  className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                    form.ocEffort === opt.id
+                      ? 'bg-blue-500/10 border-blue-500 text-blue-950 dark:text-blue-200 ring-1 ring-blue-500'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                  }`}
+                >
+                  <div className="text-xs font-bold">{opt.label}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
@@ -256,9 +315,14 @@ export const SubstrateConfigTab: React.FC<SubstrateConfigTabProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {(
                 [
+                  {
+                    id: 'off',
+                    label: tx('Off (关闭思考)', 'Off (No thinking)'),
+                    desc: tx('禁用思维链扩展', 'Disable reasoning chain'),
+                  },
                   {
                     id: 'low',
                     label: tx('Low (轻量快速)', 'Low (Fast)'),

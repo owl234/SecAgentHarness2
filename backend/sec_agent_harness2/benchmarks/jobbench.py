@@ -805,6 +805,7 @@ class JobBenchAdapter:
             "TASKS_BASE_DIR": str(self.store),
             "OPENCODE_DIR": str(config.OPENCODE_DIR),
             "MODEL_ID": config.SOLVER_MODEL_OC,
+            "VARIANT": os.environ.get("SEC_AGENT_HARNESS2_OPENCODE_VARIANT", "high") or "high",
             "TIMEOUT_PER_TASK": str(t),
             "MAX_RETRIES": "2",
             "MAX_CONCURRENT": "1",
@@ -821,7 +822,7 @@ class JobBenchAdapter:
         self.substrate.preflight()
         binary = find_pi_binary()
         model = os.environ.get("SEC_AGENT_HARNESS2_PI_MODEL", config.SOLVER_MODEL_PI)
-        effort = os.environ.get("SEC_AGENT_HARNESS2_PI_EFFORT", "high")
+        effort = os.environ.get("SEC_AGENT_HARNESS2_PI_EFFORT", "high") or "high"
         env = self.substrate.exec_env(
             os.environ,
             workspace=install.staging_dir,

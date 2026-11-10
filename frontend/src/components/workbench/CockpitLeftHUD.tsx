@@ -68,7 +68,8 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
   const [sweepBench, setSweepBench] = useState<'jb' | 'wb' | 'lab'>('jb');
   const [sweepSubset, setSweepSubset] = useState<'office' | 'web' | 'code'>('office');
   const [sweepSubstrate, setSweepSubstrate] = useState('oc');
-  const [sweepPiEffort, setSweepPiEffort] = useState<'low' | 'medium' | 'high'>('high');
+  const [sweepPiEffort, setSweepPiEffort] = useState<'off' | 'low' | 'medium' | 'high'>('high');
+  const [sweepOcEffort, setSweepOcEffort] = useState<'off' | 'low' | 'medium' | 'high'>('high');
   const [sweepK, setSweepK] = useState(1);
   const [sweepModes, setSweepModes] = useState<'both' | 'aggregate' | 'sequential'>('both');
   const [sweepWorkers, setSweepWorkers] = useState(1);
@@ -115,11 +116,19 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
     if (executorStatus.active_executor) {
       setSweepSubstrate(executorStatus.active_executor);
     }
-    const activeExec = executorStatus.executors.find(
+    const piExec = executorStatus.executors.find(
       (e) => e.id === 'pi'
     );
-    if (activeExec?.effort && ['low', 'medium', 'high'].includes(activeExec.effort)) {
-      setSweepPiEffort(activeExec.effort as 'low' | 'medium' | 'high');
+    const piEff = (piExec?.effort || '').toLowerCase();
+    if (piEff === 'off' || piEff === 'low' || piEff === 'medium' || piEff === 'high') {
+      setSweepPiEffort(piEff);
+    }
+    const ocExec = executorStatus.executors.find(
+      (e) => e.id === 'oc'
+    );
+    const ocEff = (ocExec?.effort || '').toLowerCase();
+    if (ocEff === 'off' || ocEff === 'low' || ocEff === 'medium' || ocEff === 'high') {
+      setSweepOcEffort(ocEff);
     }
   }, [executorStatus]);
 
@@ -135,7 +144,7 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
         substrate === 'pi'
           ? `Pi (${sweepPiEffort})`
           : substrate === 'oc'
-          ? 'OpenCode'
+          ? `OpenCode (${sweepOcEffort})`
           : substrate;
       onParameterChange({
         mode,
@@ -149,6 +158,7 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
     sweepModes,
     sweepSubstrate,
     sweepPiEffort,
+    sweepOcEffort,
     sweepBench,
     onParameterChange,
   ]);
@@ -235,7 +245,7 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
           max_tasks: parsedMax && parsedMax > 0 ? parsedMax : null,
           only_domains: sweepOnlyDomains.trim() || null,
           dry_run: sweepDryRun,
-          effort: sweepSubstrate === 'pi' ? sweepPiEffort : undefined,
+          effort: sweepSubstrate === 'pi' ? sweepPiEffort : sweepSubstrate === 'oc' ? sweepOcEffort : undefined,
         });
         showToast(tx('基准评测演进任务已启动', 'Benchmark Sweep pipeline launched'), 'info');
       }
@@ -776,13 +786,37 @@ export const CockpitLeftHUD: React.FC<CockpitLeftHUDProps> = ({
                   </select>
                 </div>
 
+                {launcherType === 'sweep' && sweepSubstrate === 'oc' && (
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1">
+                      {tx('OpenCode 思考变体 (Reasoning)', 'OpenCode Thinking Effort')}
+                    </label>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {(['off', 'low', 'medium', 'high'] as const).map((eff) => (
+                        <button
+                          key={eff}
+                          type="button"
+                          onClick={() => setSweepOcEffort(eff)}
+                          className={`py-1 px-2 rounded-md text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer ${
+                            sweepOcEffort === eff
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          {eff}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {launcherType === 'sweep' && sweepSubstrate === 'pi' && (
                   <div>
                     <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 block mb-1">
                       {tx('Pi 深度思考等级 (Thinking)', 'Pi Thinking Effort')}
                     </label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {(['low', 'medium', 'high'] as const).map((eff) => (
+                    <div className="grid grid-cols-4 gap-1.5">
+                      {(['off', 'low', 'medium', 'high'] as const).map((eff) => (
                         <button
                           key={eff}
                           type="button"

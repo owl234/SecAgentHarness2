@@ -97,6 +97,10 @@ def test_opencode_config_shape(monkeypatch):
     assert provider["options"]["baseURL"] == "https://shared.example.com/v1"
     assert provider["options"]["apiKey"] == "k"
     assert "some-model" in provider["models"]
+    model_obj = provider["models"]["some-model"]
+    assert model_obj["capabilities"]["reasoning"]["supported"] is True
+    assert model_obj["capabilities"]["reasoning"]["effort"] == ["low", "medium", "high"]
+    assert "reasoning" not in model_obj or not isinstance(model_obj["reasoning"], bool)
 
 
 def test_opencode_config_anthropic_uses_native_sdk(monkeypatch):

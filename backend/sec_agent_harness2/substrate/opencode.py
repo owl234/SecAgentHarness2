@@ -300,6 +300,16 @@ class OpencodeSubstrate:
         The upstream checkout runs from source through bun: there is no `opencode` binary in
         the contract. With `agent=""` the rendered AGENTS.md appends to the provider prompt.
         """
+        eff_raw = (variant or "").strip()
+        eff_lower = eff_raw.lower()
+        base_model = model.split("#")[0]
+        use_thinking = False
+        if eff_lower and eff_lower != "off":
+            effective_model = f"{base_model}#{eff_raw}"
+            use_thinking = True
+        else:
+            effective_model = base_model
+
         argv = [
             str(config.BUN),
             "run",
@@ -312,16 +322,16 @@ class OpencodeSubstrate:
             "--dir",
             str(workspace),
             "--model",
-            model,
+            effective_model,
             "--title",
             title,
             "--format",
             "json",
         ]
+        if use_thinking:
+            argv.append("--thinking")
         if agent:
             argv += ["--agent", agent]
-        if variant:
-            argv += ["--variant", variant]
         if session:
             argv += ["--session", session]
         return argv

@@ -52,6 +52,13 @@ const DEFAULT_RECOMMENDED_MODELS = [
   'qwen-2.5-coder-32b',
 ];
 
+const RECOMMENDED_JUDGE_MODELS = [
+  'gemini-2.5-pro',
+  'gpt-4o',
+  'o3-mini',
+  'gpt-5.4',
+];
+
 export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
   isOpen,
   onClose,
@@ -78,10 +85,15 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
   const [showJudgeApiKey, setShowJudgeApiKey] = useState(false);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
 
-  // Combobox dropdown state
+  // Unified model combobox dropdown state
   const [comboboxOpen, setComboboxOpen] = useState(false);
   const [comboboxFilter, setComboboxFilter] = useState('');
   const comboboxRef = useRef<HTMLDivElement>(null);
+
+  // Judge model combobox dropdown state
+  const [judgeComboboxOpen, setJudgeComboboxOpen] = useState(false);
+  const [judgeComboboxFilter, setJudgeComboboxFilter] = useState('');
+  const judgeComboboxRef = useRef<HTMLDivElement>(null);
 
   const [form, setForm] = useState<ExecutorFormValues>(INITIAL_EXECUTOR_FORM);
 
@@ -114,20 +126,23 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
     }
   }, [isOpen, loadExecutors]);
 
-  // Click outside listener for the model Combobox
+  // Click outside listener for the model & judge Comboboxes
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (comboboxRef.current && !comboboxRef.current.contains(event.target as Node)) {
         setComboboxOpen(false);
       }
+      if (judgeComboboxRef.current && !judgeComboboxRef.current.contains(event.target as Node)) {
+        setJudgeComboboxOpen(false);
+      }
     };
-    if (comboboxOpen) {
+    if (comboboxOpen || judgeComboboxOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [comboboxOpen]);
+  }, [comboboxOpen, judgeComboboxOpen]);
 
   if (!isOpen) return null;
 
@@ -139,16 +154,22 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
   const isBaseReady = Boolean(form.unifiedBaseUrl && hasApiKey);
 
   const bareCurrentModel = form.unifiedModel.trim().replace(/^sec_agent_harness2\//, '');
-  // Available models for combobox: current model + fetched models first, then default recommendations
+  const bareCurrentJudge = form.judgeModel.trim().replace(/^sec_agent_harness2\//, '');
+  // Shared candidate models pool for unified and judge comboboxes
   const candidateModels = Array.from(
     new Set([
       ...(bareCurrentModel ? [bareCurrentModel] : []),
+      ...(bareCurrentJudge ? [bareCurrentJudge] : []),
       ...fetchedModels,
       ...DEFAULT_RECOMMENDED_MODELS,
+      ...RECOMMENDED_JUDGE_MODELS,
     ])
   );
   const filteredModels = candidateModels.filter((m) =>
     m.toLowerCase().includes(comboboxFilter.toLowerCase())
+  );
+  const judgeFilteredModels = candidateModels.filter((m) =>
+    m.toLowerCase().includes(judgeComboboxFilter.toLowerCase())
   );
 
   const handleFetchModels = async () => {
@@ -246,7 +267,8 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
         model: bareModel,
         protocol: form.unifiedProtocol !== undefined ? form.unifiedProtocol.trim() : '',
         effort: form.piEffort,
-        judge_model: form.judgeModel.trim() || undefined,
+        oc_variant: form.ocEffort,
+        judge_model: form.judgeModel.trim(),
         judge_base_url: form.judgeBaseUrl !== undefined ? form.judgeBaseUrl.trim() : '',
         judge_api_key: form.judgeApiKey ? form.judgeApiKey.trim() : undefined,
         persist_dotenv: true,
@@ -272,7 +294,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
   const bareModel = form.unifiedModel.trim().replace(/^sec_agent_harness2\//, '');
   const activeModelDisplay = bareModel || tx('(未选定模型)', '(No model selected)');
   const ocDerivedModel = bareModel ? `sec_agent_harness2/${bareModel}` : tx('(未选定)', '(None)');
-  const isJudgeOverridden = Boolean(form.judgeModel.trim() && form.judgeModel.trim() !== bareModel);
+  const isJudgeOverridden = Boolean(form.judgeModel.trim());
 
   return (
     <div
@@ -646,6 +668,205 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                 </button>
               ))}
             </div>
+
+            {/* Sub-Section 2.2: 独立评估裁判模型 Combobox (Ghost Sync) */}
+            <div className="pt-3 border-t border-slate-200/70 dark:border-slate-800/70 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Scale className="w-4 h-4 text-indigo-500" />
+                  <span>
+                    {tx(
+                      '独立评估裁判模型 (SEC_AGENT_HARNESS2_JUDGE_MODEL)',
+                      'Independent Judge Model (SEC_AGENT_HARNESS2_JUDGE_MODEL)'
+                    )}
+                  </span>
+                  {isJudgeOverridden && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded font-mono font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                      {tx('独立覆盖', 'Override')}
+                    </span>
+                  )}
+                </label>
+                <div className="flex items-center gap-2">
+                  {form.judgeModel.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateForm({ judgeModel: '' });
+                        showToast(
+                          tx('已复位裁判模型为跟随统一模型', 'Judge model reset to sync with unified model'),
+                          'info'
+                        );
+                      }}
+                      className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer font-medium"
+                      title={tx('清除独立裁判模型设置，默认与统一模型保持一致', 'Clear override and follow unified model')}
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>{tx('一键复位跟随统一模型', 'Reset to Unified')}</span>
+                    </button>
+                  )}
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {form.judgeModel.trim()
+                      ? tx('专有裁判模型已生效', 'Custom judge model active')
+                      : tx('留空默认跟随统一模型', 'Default: Follows Unified Model')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Judge Combobox Input with Dropdown Toggle */}
+              <div className="relative" ref={judgeComboboxRef}>
+                <div className="flex items-center relative">
+                  <input
+                    type="text"
+                    value={form.judgeModel}
+                    onChange={(e) => {
+                      updateForm({ judgeModel: e.target.value });
+                      setJudgeComboboxFilter(e.target.value);
+                      setJudgeComboboxOpen(true);
+                    }}
+                    onFocus={() => {
+                      setJudgeComboboxFilter('');
+                      setJudgeComboboxOpen(true);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape' && judgeComboboxOpen) {
+                        e.stopPropagation();
+                        setJudgeComboboxOpen(false);
+                      } else if (e.key === 'Enter' && judgeComboboxOpen) {
+                        setJudgeComboboxOpen(false);
+                      }
+                    }}
+                    placeholder={
+                      form.judgeModel.trim()
+                        ? ''
+                        : tx(
+                            `跟随统一模型 (当前: ${bareModel || tx('未选定', 'None')})`,
+                            `Sync with Unified Model (Current: ${bareModel || 'None'})`
+                          )
+                    }
+                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl pl-3.5 pr-10 py-2.5 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-indigo-500 shadow-sm placeholder:text-slate-400 dark:placeholder:text-slate-500 placeholder:font-sans"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJudgeComboboxFilter('');
+                      setJudgeComboboxOpen((v) => !v);
+                    }}
+                    className="absolute right-2.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded cursor-pointer"
+                    title={tx('切换裁判模型列表', 'Toggle judge model dropdown')}
+                  >
+                    {judgeComboboxOpen ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+
+                {/* Judge Combobox Dropdown Menu */}
+                {judgeComboboxOpen && (
+                  <div className="absolute z-30 left-0 right-0 mt-1.5 max-h-60 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xl p-1.5 space-y-1">
+                    <div className="px-2.5 py-1.5 text-[10px] text-slate-400 flex items-center justify-between border-b border-slate-100 dark:border-slate-800 mb-1">
+                      <span className="flex items-center gap-1">
+                        <Search className="w-3 h-3" />
+                        <span>{tx('过滤匹配裁判模型', 'Filter Judge Models')}</span>
+                      </span>
+                      <span>
+                        {judgeFilteredModels.length} / {candidateModels.length}
+                      </span>
+                    </div>
+
+                    {/* Sync Option (Ghost Sync Option) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateForm({ judgeModel: '' });
+                        setJudgeComboboxOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2 text-left rounded-lg text-xs font-mono transition-colors cursor-pointer ${
+                        !form.judgeModel.trim()
+                          ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-semibold'
+                          : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        {!form.judgeModel.trim() && <Check className="w-3.5 h-3.5 text-indigo-500 shrink-0" />}
+                        <span className="font-sans font-medium text-slate-900 dark:text-white">
+                          {tx(
+                            `跟随统一模型 (当前: ${bareModel || tx('未选定', 'None')})`,
+                            `Sync with Unified Model (Current: ${bareModel || 'None'})`
+                          )}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-slate-400 font-sans shrink-0 ml-2">
+                        {tx('默认联动', 'Default Sync')}
+                      </span>
+                    </button>
+
+                    {judgeFilteredModels.map((m) => {
+                      const isSelected = form.judgeModel === m;
+                      const isFetched = fetchedModels.includes(m);
+                      return (
+                        <button
+                          key={m}
+                          type="button"
+                          onClick={() => {
+                            updateForm({ judgeModel: m });
+                            setJudgeComboboxOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-left rounded-lg text-xs font-mono transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-semibold'
+                              : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            {isSelected && <Check className="w-3.5 h-3.5 text-indigo-500 shrink-0" />}
+                            <span className="truncate">{m}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-sans shrink-0 ml-2">
+                            {isFetched ? tx('API 端点', 'API Endpoint') : tx('推荐预设', 'Preset')}
+                          </span>
+                        </button>
+                      );
+                    })}
+
+                    {judgeFilteredModels.length === 0 && (
+                      <div className="px-3 py-3 text-center text-xs text-slate-500 dark:text-slate-400">
+                        <div>{tx('未找到匹配的已知模型', 'No matching preset models found')}</div>
+                        <button
+                          type="button"
+                          onClick={() => setJudgeComboboxOpen(false)}
+                          className="mt-1.5 text-[11px] text-indigo-500 hover:underline cursor-pointer"
+                        >
+                          {tx(`直接使用输入的 "${form.judgeModel}"`, `Use typed "${form.judgeModel}"`)}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Quick Recommended Judge Chips */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="text-[11px] text-slate-400 mr-1 flex items-center gap-1">
+                  <span>{tx('推荐裁判:', 'Recommended Judges:')}</span>
+                </span>
+                {RECOMMENDED_JUDGE_MODELS.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => updateForm({ judgeModel: m })}
+                    className={`px-2.5 py-1 text-[11px] font-mono rounded-lg border transition-all cursor-pointer ${
+                      form.judgeModel === m
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 hover:bg-indigo-500/10 hover:text-indigo-500 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           {/* Section 3: 全基座生效联动矩阵 (Harness Live Matrix) */}
@@ -776,17 +997,38 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                   <div>
                     <div className="font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                       <span>{tx('评估裁判 (Judge)', 'Benchmark Judge')}</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                        {form.judgeBaseUrl && form.judgeBaseUrl.trim() !== form.unifiedBaseUrl.trim() ? 'custom' : 'unified/vertex'}
-                      </span>
+                      {form.judgeBaseUrl && form.judgeBaseUrl.trim() && form.judgeBaseUrl.trim() !== form.unifiedBaseUrl.trim() ? (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 font-medium">
+                          {tx('独立专有端点 (custom-url)', 'Dedicated (custom-url)')}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 font-medium">
+                          {tx('共享统一 API (shared-endpoint)', 'Shared (shared-endpoint)')}
+                        </span>
+                      )}
                     </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      {tx('派生模型: ', 'Mapped model: ')}
-                      <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">
-                        {isJudgeOverridden
-                          ? `${form.judgeModel.trim()} ${tx('(高级覆盖)', '(Override)')}`
-                          : activeModelDisplay}
-                      </span>
+                    <div className="text-[11px] mt-0.5 flex items-center gap-1">
+                      {isJudgeOverridden ? (
+                        <>
+                          <span className="text-slate-400">{tx('独立评估裁判: ', 'Independent Judge: ')}</span>
+                          <span className="font-mono text-purple-600 dark:text-purple-400 font-semibold">
+                            {form.judgeModel.trim()}
+                          </span>
+                          <span className="text-amber-500 text-[10px] ml-1">
+                            {tx('(独立覆盖)', '(Override)')}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-slate-400">{tx('同步基座模型: ', 'Synced with Base: ')}</span>
+                          <span className="font-mono text-blue-600 dark:text-blue-400 font-semibold">
+                            {activeModelDisplay}
+                          </span>
+                          <span className="text-emerald-500 text-[10px] ml-1">
+                            {tx('(跟随统一)', '(Synced)')}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -811,12 +1053,12 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                 <Settings2 className="w-4 h-4 text-slate-500" />
                 <div>
                   <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                    {tx('基座高级微调与裁判覆盖 (可选)', 'Advanced Substrate Overrides & Judge (Optional)')}
+                    {tx('基座高级微调与裁判专有配置 (可选)', 'Advanced Substrate Overrides & Judge Endpoints (Optional)')}
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                     {tx(
-                      'Pi 推理强度及独立裁判模型覆盖',
-                      'Pi reasoning effort and separate judge model override'
+                      'OpenCode 与 Pi 思考强度及可选裁判专有端点/密钥（默认共享统一 API）',
+                      'OpenCode & Pi reasoning effort and optional judge endpoint/key (shares unified API by default)'
                     )}
                   </div>
                 </div>
@@ -828,19 +1070,27 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
 
             {isAdvancedOpen && (
               <div className="p-4 space-y-4 border-t border-slate-200 dark:border-slate-800">
-                {/* 1. Pi Effort */}
+                {/* 1. OpenCode Effort */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-                    {tx('Pi Coding Agent 推理与思考强度 (--thinking)', 'Pi Coding Agent Reasoning & Thinking (--thinking)')}
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(['low', 'medium', 'high'] as const).map((eff) => (
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      {tx(
+                        'OpenCode 思考变体与推理强度 (SEC_AGENT_HARNESS2_OPENCODE_VARIANT · 传递为 --model <id>#<variant>)',
+                        'OpenCode Reasoning Effort (SEC_AGENT_HARNESS2_OPENCODE_VARIANT · passed as --model <id>#<variant>)'
+                      )}
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full border border-blue-500/20">
+                      {form.ocEffort.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(['off', 'low', 'medium', 'high'] as const).map((eff) => (
                       <button
                         key={eff}
                         type="button"
-                        onClick={() => updateForm({ piEffort: eff })}
+                        onClick={() => updateForm({ ocEffort: eff })}
                         className={`py-1.5 text-xs font-medium rounded-xl border transition-all cursor-pointer ${
-                          form.piEffort === eff
+                          form.ocEffort === eff
                             ? 'bg-blue-600 text-white border-blue-600 shadow-sm font-semibold'
                             : 'bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-slate-300'
                         }`}
@@ -851,38 +1101,70 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                   </div>
                   <p className="text-[10px] text-slate-400 mt-1">
                     {tx(
-                      '控制 Pi 在思考模式下的推理深度与思考预算。',
-                      'Controls the reasoning depth and thinking budget for Pi.'
+                      '非 OFF 时自动拼装为 #variant 并开启 --thinking 开关。',
+                      'Appends #variant to model and enables --thinking unless set to OFF.'
                     )}
                   </p>
                 </div>
 
-                {/* 2. Judge Model Override */}
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                {/* 2. Pi Effort */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      {tx('Pi Coding Agent 推理与思考强度 (SEC_AGENT_HARNESS2_PI_EFFORT · 传递为 pi --thinking)', 'Pi Coding Agent Reasoning & Thinking (SEC_AGENT_HARNESS2_PI_EFFORT · passed as pi --thinking)')}
+                    </label>
+                    <span className="text-[10px] font-mono font-bold text-pink-600 dark:text-pink-400 bg-pink-500/10 px-2 py-0.5 rounded-full border border-pink-500/20">
+                      {form.piEffort.toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {(['off', 'low', 'medium', 'high'] as const).map((eff) => (
+                      <button
+                        key={eff}
+                        type="button"
+                        onClick={() => updateForm({ piEffort: eff })}
+                        className={`py-1.5 text-xs font-medium rounded-xl border transition-all cursor-pointer ${
+                          form.piEffort === eff
+                            ? 'bg-pink-600 text-white border-pink-600 shadow-sm font-semibold'
+                            : 'bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                        }`}
+                      >
+                        {eff.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    {tx(
+                      '控制 Pi 在思考模式下的推理深度与思考预算。OFF 档位彻底关闭思维链。',
+                      'Controls the reasoning depth and thinking budget for Pi. OFF completely disables reasoning.'
+                    )}
+                  </p>
+                </div>
+
+                {/* 3. Judge Endpoint & API Key Overrides (Model selection is unified in Section 2) */}
+                <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">
                       {tx(
-                        '独立评估裁判模型 (SEC_AGENT_HARNESS2_JUDGE_MODEL · 留空默认同步统一模型)',
-                        'Custom Judge Model (SEC_AGENT_HARNESS2_JUDGE_MODEL · Leave empty to sync with unified model)'
+                        '裁判专有 API 端点与密钥覆盖 (可选 · 留空默认共享统一 API)',
+                        'Judge Endpoint & Key Overrides (Optional · Shares Unified API by Default)'
                       )}
                     </label>
-                    <input
-                      type="text"
-                      value={form.judgeModel}
-                      onChange={(e) => updateForm({ judgeModel: e.target.value })}
-                      placeholder={
-                        unifiedCfg?.judge_model && unifiedCfg.judge_model !== (unifiedCfg.model || '')
-                          ? tx(`当前独立覆盖: ${unifiedCfg.judge_model}`, `Current override: ${unifiedCfg.judge_model}`)
-                          : tx('留空默认跟随统一模型', 'Leave blank to follow Unified Model')
-                      }
-                      className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3.5 py-2 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
-                    />
+                    <span className="text-[10px] text-slate-400">
+                      {tx('留空即共享统一 API', 'Leave blank to share unified API')}
+                    </span>
                   </div>
+                  <p className="text-[10px] text-slate-400 leading-relaxed">
+                    {tx(
+                      '裁判模型已直接在上方「统一模型选择」区域统筹管理。若裁判需要使用专有独立端点或不同 API 密钥，可在此单独覆盖；留空时自动复用统一 API 的 Base URL 和 Key。',
+                      'Judge model selection is directly managed in Section 2 above. If the judge requires a dedicated endpoint or separate API key, configure them here; leaving blank automatically shares the unified API Base URL and Key.'
+                    )}
+                  </p>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                        {tx('独立裁判端点 (可选)', 'Custom Judge Base URL (Optional)')}
+                        {tx('裁判专属端点 (SEC_AGENT_HARNESS2_JUDGE_BASE_URL · 可选)', 'Custom Judge Base URL (Optional)')}
                       </label>
                       <input
                         type="text"
@@ -890,8 +1172,8 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                         onChange={(e) => updateForm({ judgeBaseUrl: e.target.value })}
                         placeholder={
                           unifiedCfg?.judge_base_url && unifiedCfg.judge_base_url !== (unifiedCfg.base_url || '')
-                            ? tx(`当前独立端点: ${unifiedCfg.judge_base_url}`, `Custom endpoint: ${unifiedCfg.judge_base_url}`)
-                            : tx('留空复用统一 Base URL', 'Leave blank to reuse Unified Base URL')
+                            ? tx(`当前专有端点: ${unifiedCfg.judge_base_url}`, `Custom endpoint: ${unifiedCfg.judge_base_url}`)
+                            : tx('留空默认共享统一 Base URL', 'Leave blank to share Unified Base URL')
                         }
                         className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
                       />
@@ -899,7 +1181,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                     <div>
                       <div className="flex items-center justify-between mb-1">
                         <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                          {tx('独立裁判密钥 (可选)', 'Custom Judge API Key (Optional)')}
+                          {tx('裁判专属密钥 (SEC_AGENT_HARNESS2_JUDGE_API_KEY · 可选)', 'Custom Judge API Key (Optional)')}
                         </label>
                         <button
                           type="button"
@@ -916,7 +1198,7 @@ export const ExecutorConfigDrawer: React.FC<ExecutorConfigDrawerProps> = ({
                         placeholder={
                           unifiedCfg?.judge_api_key_configured
                             ? tx(`已配置 (${unifiedCfg.judge_api_key_masked})`, `Configured (${unifiedCfg.judge_api_key_masked})`)
-                            : tx('留空复用统一密钥', 'Leave blank to reuse unified key')
+                            : tx('留空默认共享统一密钥', 'Leave blank to share Unified Key')
                         }
                         className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
                       />

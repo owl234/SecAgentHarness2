@@ -228,11 +228,21 @@ class Proposer:
         env["XDG_DATA_HOME"] = str(cwd / ".ocdata")
         env["XDG_STATE_HOME"] = str(cwd / ".ocstate")
 
+        eff_raw = (self.spec.effort or "").strip()
+        eff_lower = eff_raw.lower()
+        base_model = self.spec.model.split("#")[0]
+        use_thinking = False
+        if eff_lower and eff_lower != "off":
+            effective_model = f"{base_model}#{eff_raw}"
+            use_thinking = True
+        else:
+            effective_model = base_model
+
         cmd = [
             str(config.BUN),
             "run",
             "--cwd",
-            str(oc / "packages" / "opencode"),
+            str(oc / "packages" / "cli"),
             "--conditions=browser",
             "src/index.ts",
             "run",
@@ -240,12 +250,12 @@ class Proposer:
             "--dir",
             str(cwd),
             "--model",
-            self.spec.model,
+            effective_model,
             "--format",
             "json",
         ]
-        if self.spec.effort:
-            cmd += ["--variant", self.spec.effort]
+        if use_thinking:
+            cmd.append("--thinking")
         p = subprocess.run(
             cmd,
             cwd=cwd,
@@ -308,8 +318,9 @@ class Proposer:
             "--model",
             bare_model,
         ]
-        if self.spec.effort:
-            cmd += ["--thinking", self.spec.effort]
+        pi_eff = (self.spec.effort or "").strip()
+        if pi_eff and pi_eff.lower() != "off":
+            cmd += ["--thinking", pi_eff]
         p = subprocess.run(
             cmd,
             cwd=cwd,
@@ -415,7 +426,7 @@ def _drop_workspace(paths: dict[str, Path] | None) -> None:
 def _opencode_dir() -> Path:
     """The upstream OpenCode checkout to run through bun: config.OPENCODE_DIR."""
     oc = config.OPENCODE_DIR
-    if not (oc / "packages" / "opencode" / "src" / "index.ts").is_file():
+    if not (oc / "packages" / "cli" / "src" / "index.ts").is_file() and not (oc / "packages" / "opencode" / "src" / "index.ts").is_file():
         raise FileNotFoundError(
             f"no OpenCode checkout at {oc} (config.OPENCODE_DIR); run "
             f"scripts/setup_benchmark.py <benchmark> to clone the pinned commit there"

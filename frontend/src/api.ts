@@ -263,6 +263,8 @@ export async function saveExecutorConfig(payload: {
   model?: string;
   protocol?: string;
   effort?: string;
+  oc_variant?: string;
+  oc_effort?: string;
   container_url?: string;
   improver_model?: string;
   judge_model?: string;

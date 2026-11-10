@@ -43,15 +43,17 @@ export const CockpitCommandRibbon: React.FC<CockpitCommandRibbonProps> = ({
     preflight?.has_credentials && preflight?.docker?.available
   );
 
+  const isPiActive = executorStatus?.active_executor === 'pi';
   const activeExecutorLabel =
-    executorStatus?.active_executor === 'pi'
+    isPiActive
       ? 'Pi Coding Agent (pi)'
       : 'OpenCode (oc)';
 
-  const activeEffort =
-    executorStatus?.executors.find(
-      (e) => e.id === 'pi'
-    )?.effort || 'high';
+  const rawEffort =
+    (isPiActive
+      ? executorStatus?.executors.find((e) => e.id === 'pi')?.effort
+      : executorStatus?.executors.find((e) => e.id === 'oc')?.effort) || 'high';
+  const activeEffort = rawEffort.trim().toLowerCase() || 'high';
 
   return (
     <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-800 rounded-2xl px-4 py-2.5 shadow-sm transition-all flex flex-wrap items-center justify-between gap-3">
@@ -127,11 +129,15 @@ export const CockpitCommandRibbon: React.FC<CockpitCommandRibbonProps> = ({
         >
           <Cpu className="w-3.5 h-3.5 text-blue-500" />
           <span className="font-semibold">{activeExecutorLabel}</span>
-          {activeExecutorLabel.includes('Pi') && (
-            <span className="text-[10px] px-1 rounded bg-pink-200 dark:bg-pink-900/60 font-bold uppercase text-pink-800 dark:text-pink-200">
-              {activeEffort}
-            </span>
-          )}
+          <span
+            className={`text-[10px] px-1 rounded font-bold uppercase ${
+              isPiActive
+                ? 'bg-pink-200 dark:bg-pink-900/60 text-pink-800 dark:text-pink-200'
+                : 'bg-blue-200 dark:bg-blue-900/60 text-blue-800 dark:text-blue-200'
+            }`}
+          >
+            {activeEffort}
+          </span>
         </button>
       </div>
 

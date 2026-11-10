@@ -387,12 +387,25 @@ except Exception as exc:
 
 
 def _lab_env() -> dict[str, str]:
-    return {
+    env = {
         **os.environ,
         "PYTHONPATH": str(config.lab_repo()),
         "PATH": f"{config.LAB_PYTHON.parent}:{config.BUN.parent}:"
         + os.environ.get("PATH", ""),
     }
+    if config.JB_JUDGE_API_BASE:
+        env["HARNESS2_JUDGE_BASE_URL"] = str(config.JB_JUDGE_API_BASE)
+        env["SEC_AGENT_HARNESS2_JUDGE_BASE_URL"] = str(config.JB_JUDGE_API_BASE)
+    if config.JB_JUDGE_API_KEY:
+        env["HARNESS2_JUDGE_API_KEY"] = str(config.JB_JUDGE_API_KEY)
+        env["SEC_AGENT_HARNESS2_JUDGE_API_KEY"] = str(config.JB_JUDGE_API_KEY)
+    if config.API_BASE_URL:
+        env["HARNESS2_API_BASE_URL"] = str(config.API_BASE_URL)
+        env["SEC_AGENT_HARNESS2_API_BASE_URL"] = str(config.API_BASE_URL)
+    if config.API_KEY:
+        env["HARNESS2_API_KEY"] = str(config.API_KEY)
+        env["SEC_AGENT_HARNESS2_API_KEY"] = str(config.API_KEY)
+    return env
 
 
 def _oc_env() -> dict[str, str]:
@@ -526,7 +539,7 @@ class LabAdapter:
         model: str | None = None,
         timeout: int | None = None,
         skill_mode: str = "native",
-        solver_effort: str = "high",
+        solver_effort: str | None = None,
         judge_model: str = JUDGE_MODEL,
         split_file: Path | None = None,
     ):
@@ -538,17 +551,19 @@ class LabAdapter:
             self.substrate = OpencodeSubstrate(launcher=self._launch_oc)
             self.model = model or config.SOLVER_MODEL_OC
             self._results_root = config.RUNS / "lab" / "results" / "oc"
+            default_effort = os.environ.get("SEC_AGENT_HARNESS2_OPENCODE_VARIANT", "high") or "high"
         elif substrate == "pi":
             self.substrate = PiSubstrate(launcher=self._launch_pi)
             self.model = model or config.SOLVER_MODEL_PI
             self._results_root = config.RUNS / "lab" / "results" / "pi"
+            default_effort = os.environ.get("SEC_AGENT_HARNESS2_PI_EFFORT", "high") or "high"
         else:
             raise ValueError(
                 f"substrate must be 'oc' or 'pi', got {substrate!r}"
             )
         self.timeout = int(timeout or 3600)
         self.skill_mode = skill_mode
-        self.solver_effort = solver_effort
+        self.solver_effort = solver_effort if solver_effort is not None else default_effort
         self.judge_model = judge_model
         self._deliverables: dict[str, dict[str, str]] = {}
 
